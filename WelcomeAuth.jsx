@@ -1,0 +1,280 @@
+import React, { useState, useRef, useEffect } from "react";
+import { Sprout, ShoppingBasket, ArrowRight, ChevronLeft, Phone, RefreshCw } from "lucide-react";
+import { supabase } from "./supabaseClient";
+
+/* ----------------------------- design tokens ------------------------------
+   Same palette/fonts as the rest of AgriTrade, so this screen matches the
+   Home/Trade/Chat/Profile screens exactly.
+----------------------------------------------------------------------------*/
+const C = {
+  bg: "#F5F6F0", ink: "#1B2420", sub: "#6B7268", line: "#E4E1D3",
+  primary: "#1E4732", clay: "#B65C38", teal: "#2A6773", gold: "#D98A2B",
+};
+
+const fontStyle = (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+  `}</style>
+);
+
+/* ------------------------------- OTP input --------------------------------
+   6 separate boxes, auto-advance on type, backspace moves back a box.
+----------------------------------------------------------------------------*/
+function OtpInput({ value, onChange, length = 6 }) {
+  const refs = useRef([]);
+  const digits = value.split("").concat(Array(length).fill("")).slice(0, length);
+
+  const setDigit = (i, d) => {
+    const next = [...digits];
+    next[i] = d;
+    onChange(next.join(""));
+    if (d && i < length - 1) refs.current[i + 1]?.focus();
+  };
+
+  const onKeyDown = (i, e) => {
+    if (e.key === "Backspace" && !digits[i] && i > 0) refs.current[i - 1]?.focus();
+  };
+
+  return (
+    <div className="flex gap-2 justify-center">
+      {digits.map((d, i) => (
+        <input
+          key={i}
+          ref={(el) => (refs.current[i] = el)}
+          value={d}
+          onChange={(e) => setDigit(i, e.target.value.replace(/\D/g, "").slice(-1))}
+          onKeyDown={(e) => onKeyDown(i, e)}
+          inputMode="numeric"
+          maxLength={1}
+          className="w-11 h-13 h-[52px] rounded-xl border border-[#E4E1D3] bg-white text-center font-['IBM_Plex_Mono'] text-[20px] font-semibold text-[#1B2420] outline-none focus:border-[#1E4732]"
+        />
+      ))}
+    </div>
+  );
+}
+
+/* --------------------------------- Screen ---------------------------------- */
+export default function WelcomeAuth({ onAuthed }) {
+  const [step, setStep] = useState("role");      // role -> phone -> otp -> name
+  const [role, setRole] = useState(null);         // "farmer" | "buyer"
+  const [phone, setPhone] = useState("");         // digits only, no +91
+  const [otp, setOtp] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [resendIn, setResendIn] = useState(0);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  const e164 = "+91" + phone.replace(/\D/g, "");
+
+  const sendOtp = async () => {
+    setError("");
+    if (phone.replace(/\D/g, "").length !== 10) return setError("Enter a valid 10-digit number.");
+    setLoading(true);
+    // Supabase sends the SMS itself — Twilio is wired up as the SMS provider
+    // in Supabase Dashboard -> Authentication -> Providers -> Phone.
+    const { error } = await supabase.auth.signInWithOtp({ phone: e164 });
+    setLoading(false);
+    if (error) return setError(error.message);
+    setResendIn(30);
+    setStep("otp");
+  };
+
+  const verifyOtp = async () => {
+    if (otp.length !== 6) return setError("Enter the 6-digit code.");
+    setError("");
+    setLoading(true);
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: e164,
+      token: otp,
+      type: "sms",
+    });
+    if (error) { setLoading(false); return setError(error.message); }
+
+    const userId = data.user.id;
+    // Check if this phone number already has a profile (returning user).
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+
+    setLoading(false);
+    if (profile) {
+      onAuthed(profile);           // returning user -> straight into the app
+    } else {
+      setStep("name");             // new user -> collect name once
+    }
+  };
+
+  const finishSignup = async () => {
+    if (!name.trim()) return setError("Enter your name.");
+    setError("");
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .upsert({ id: user.id, name: name.trim(), phone: e164, role })
+      .select()
+      .single();
+    setLoading(false);
+    if (error) return setError(error.message);
+    onAuthed(profile);
+  };
+
+  const accent = role === "buyer" ? C.teal : C.clay;
+
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#EDEAE0] px-4">
+      {fontStyle}
+      <div className="w-full max-w-[380px] bg-[#F5F6F0] rounded-[1.75rem] shadow-xl overflow-hidden">
+        {/* header */}
+        <div className="bg-[#1B2420] px-6 pt-9 pb-7 relative overflow-hidden">
+          <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/5" />
+          {step !== "role" && (
+            <button
+              onClick={() => { setError(""); setStep(step === "otp" ? "phone" : step === "name" ? "otp" : "role"); }}
+              className="absolute left-5 top-9 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
+            >
+              <ChevronLeft size={18} color="#fff" />
+            </button>
+          )}
+          <p className="font-['Fraunces'] text-[24px] font-semibold text-white text-center">AgriTrade</p>
+          <p className="font-['Manrope'] text-[12px] text-white/60 text-center mt-1">
+            Direct from farm gate to the right buyer
+          </p>
+        </div>
+
+        <div className="px-6 py-7">
+          {error && (
+            <p className="font-['Manrope'] text-[12px] text-[#B23B3B] bg-[#F6E4E4] rounded-lg px-3 py-2 mb-4">{error}</p>
+          )}
+
+          {/* -------------------------- STEP 1: role -------------------------- */}
+          {step === "role" && (
+            <>
+              <p className="font-['Manrope'] text-[13px] text-[#6B7268] mb-4 text-center">
+                Tell us who you are to get started
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={() => { setRole("farmer"); setStep("phone"); }}
+                  className="flex items-center gap-3 border-2 border-[#E4E1D3] hover:border-[#B65C38] rounded-2xl px-4 py-4 text-left transition-colors"
+                >
+                  <div className="w-11 h-11 rounded-full bg-[#F5E3DA] flex items-center justify-center shrink-0">
+                    <Sprout size={22} color={C.clay} />
+                  </div>
+                  <div>
+                    <p className="font-['Manrope'] text-[14px] font-semibold text-[#1B2420]">I'm a Farmer</p>
+                    <p className="font-['Manrope'] text-[12px] text-[#6B7268]">Sell your produce to verified buyers</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setRole("buyer"); setStep("phone"); }}
+                  className="flex items-center gap-3 border-2 border-[#E4E1D3] hover:border-[#2A6773] rounded-2xl px-4 py-4 text-left transition-colors"
+                >
+                  <div className="w-11 h-11 rounded-full bg-[#DFEBEC] flex items-center justify-center shrink-0">
+                    <ShoppingBasket size={22} color={C.teal} />
+                  </div>
+                  <div>
+                    <p className="font-['Manrope'] text-[14px] font-semibold text-[#1B2420]">I'm a Buyer</p>
+                    <p className="font-['Manrope'] text-[12px] text-[#6B7268]">Source quality lots directly from farmers</p>
+                  </div>
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* -------------------------- STEP 2: phone ------------------------- */}
+          {step === "phone" && (
+            <>
+              <p className="font-['Manrope'] text-[13px] text-[#6B7268] mb-1 text-center">
+                Enter your mobile number
+              </p>
+              <p className="font-['Manrope'] text-[11px] text-[#8B9086] mb-4 text-center">
+                We'll text you a one-time code to verify it
+              </p>
+              <div className="flex items-center gap-2 bg-white border border-[#E4E1D3] rounded-xl px-3 h-13 h-[52px] mb-4">
+                <span className="font-['IBM_Plex_Mono'] text-[15px] font-semibold text-[#1B2420]">+91</span>
+                <div className="w-px h-5 bg-[#E4E1D3]" />
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  placeholder="98765 43210"
+                  inputMode="numeric"
+                  className="flex-1 bg-transparent outline-none font-['IBM_Plex_Mono'] text-[15px] text-[#1B2420] placeholder:text-[#B7BDAF]"
+                />
+              </div>
+              <button
+                onClick={sendOtp}
+                disabled={loading}
+                className="w-full h-12 rounded-xl text-white font-['Manrope'] font-semibold text-[15px] flex items-center justify-center gap-1.5 disabled:opacity-60"
+                style={{ backgroundColor: accent }}
+              >
+                {loading ? "Sending code…" : <>Send OTP <ArrowRight size={16} color="#fff" /></>}
+              </button>
+            </>
+          )}
+
+          {/* -------------------------- STEP 3: otp --------------------------- */}
+          {step === "otp" && (
+            <>
+              <p className="font-['Manrope'] text-[13px] text-[#6B7268] mb-1 text-center">
+                Enter the 6-digit code sent to
+              </p>
+              <p className="font-['IBM_Plex_Mono'] text-[14px] font-semibold text-[#1B2420] mb-4 text-center">
+                +91 {phone}
+              </p>
+              <div className="mb-4">
+                <OtpInput value={otp} onChange={setOtp} />
+              </div>
+              <button
+                onClick={verifyOtp}
+                disabled={loading}
+                className="w-full h-12 rounded-xl text-white font-['Manrope'] font-semibold text-[15px] flex items-center justify-center gap-1.5 disabled:opacity-60 mb-3"
+                style={{ backgroundColor: accent }}
+              >
+                {loading ? "Verifying…" : <>Verify & continue <ArrowRight size={16} color="#fff" /></>}
+              </button>
+              <button
+                onClick={sendOtp}
+                disabled={resendIn > 0 || loading}
+                className="w-full flex items-center justify-center gap-1.5 font-['Manrope'] text-[12px] font-semibold text-[#6B7268] disabled:opacity-50"
+              >
+                <RefreshCw size={12} /> {resendIn > 0 ? `Resend code in ${resendIn}s` : "Resend code"}
+              </button>
+            </>
+          )}
+
+          {/* -------------------------- STEP 4: name (new users) --------------- */}
+          {step === "name" && (
+            <>
+              <p className="font-['Manrope'] text-[13px] text-[#6B7268] mb-4 text-center">
+                Almost there — what should we call you?
+              </p>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Full name"
+                className="w-full h-12 rounded-xl border border-[#E4E1D3] bg-white px-4 mb-4 font-['Manrope'] text-[14px] text-[#1B2420] outline-none focus:border-[#1E4732]"
+              />
+              <button
+                onClick={finishSignup}
+                disabled={loading}
+                className="w-full h-12 rounded-xl text-white font-['Manrope'] font-semibold text-[15px] flex items-center justify-center gap-1.5 disabled:opacity-60"
+                style={{ backgroundColor: accent }}
+              >
+                {loading ? "Creating account…" : <>Create account <ArrowRight size={16} color="#fff" /></>}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

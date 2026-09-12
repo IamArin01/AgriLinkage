@@ -1,0 +1,25 @@
+Suggestion-
+Never call Twilio directly from the frontend. Some tutorials show raw Twilio REST calls from client code — that exposes your Auth Token. Routing through Supabase's built-in phone auth (as above) means your Twilio secret never leaves the server side.
+
+create table profiles (
+  id uuid references auth.users(id) primary key,
+  name text,
+  phone text,
+  role text check (role in ('farmer','buyer')),
+  created_at timestamptz default now()
+);
+
+alter table profiles enable row level security;
+
+create policy "Users manage their own profile"
+on profiles for all
+using (auth.uid() = id)
+with check (auth.uid() = id);
+
+
+
+above is suggestion by claude and code sample of how the supabase client should buyer
+also i have put a file welcomeauth.jsx in the folder which will be the welcome page for the page
+add it into main file so that it can be used in the main app
+
+integrate supabase client with the same full app.
