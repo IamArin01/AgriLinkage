@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { CROPS, THEME_COLORS, formatCurrency } from "./constants/theme.js";
 import { TradeProvider, useTrade } from "./context/TradeContext.jsx";
-import { HomeScreen } from "./components/HomeScreen.jsx";
+import HomeScreen from "./components/HomeScreen.jsx";
 
 /* ----------------------------- color palette bridge ----------------------------- */
 
@@ -285,7 +285,7 @@ function CreateLotScreen({ onPublish, onBack }) {
 function LotDetailScreen({ lot, role, onOpenPerson }) {
   return (
     <div className="flex-1 overflow-y-auto pb-6">
-      <div className="mx-4 mt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4">
+      <div className="px-4 pt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4">
         <div className="flex items-start justify-between">
           <p className="text-[20px] font-semibold text-[#1B2420]">{lot.crop}</p>
           <span className="text-[18px] font-semibold text-[#1E4732]">{fmtRs(lot.price)}<span className="text-[11px] text-[#6B7268]">/q</span></span>
@@ -308,7 +308,7 @@ function LotDetailScreen({ lot, role, onOpenPerson }) {
         </div>
       </div>
 
-      <div className="mx-4 mt-3">
+      <div className="px-4 mt-3">
         <p className="text-[13px] font-semibold text-[#1B2420] mb-2 px-0.5">
           {role === "farmer" ? `Interested buyers (${lot.interested.length})` : `Other buyers on this lot (${lot.interested.length})`}
         </p>
@@ -339,7 +339,7 @@ function LotDetailScreen({ lot, role, onOpenPerson }) {
 function PersonDetailScreen({ person, lotSummary, onContact }) {
   return (
     <div className="flex-1 overflow-y-auto pb-6">
-      <div className="mx-4 mt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4 flex items-center gap-3">
+      <div className="px-4 pt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4 flex items-center gap-3">
         <div className="w-14 h-14 rounded-full bg-[#DFEBEC] flex items-center justify-center">
           <CircleUser size={30} color={C.teal} />
         </div>
@@ -354,12 +354,12 @@ function PersonDetailScreen({ person, lotSummary, onContact }) {
         </div>
       </div>
 
-      <div className="mx-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl p-3.5">
+      <div className="px-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl p-3.5">
         <p className="text-[12px] font-semibold text-[#1B2420] mb-1">This offer</p>
         <p className="text-[13px] text-[#6B7268]">{lotSummary || `${person.qty} quintals · Grade ${person.grade}`}</p>
       </div>
 
-      <div className="mx-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl p-3.5">
+      <div className="px-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl p-3.5">
         <p className="text-[12px] font-semibold text-[#1B2420] mb-2">Past transactions on AgriTrade</p>
         {[["14 Jun", "Masoor · 80 q", "₹4,320/q"], ["2 Apr", "Chana · 40 q", "₹4,980/q"]].map((t, i) => (
           <div key={i} className="flex items-center justify-between py-1.5 border-t border-[#EEECDF] first:border-t-0 first:pt-0">
@@ -369,7 +369,7 @@ function PersonDetailScreen({ person, lotSummary, onContact }) {
         ))}
       </div>
 
-      <button onClick={onContact} className="mx-4 mt-4 w-[calc(100%-2rem)] h-12 rounded-xl bg-[#1E4732] text-white font-semibold text-[15px] flex items-center justify-center gap-2">
+      <button onClick={onContact} className="mt-4 w-full h-12 rounded-xl bg-[#1E4732] text-white font-semibold text-[15px] flex items-center justify-center gap-2">
         <Phone size={16} /> Contact {person.name}
       </button>
     </div>
@@ -604,7 +604,7 @@ function ProfileScreen({ role, profile, onSignOut }) {
     : [[Boxes, "Your deals & inventory"], [Receipt, "Past transactions"], [IdCard, "Account details"], [FileWarning, "Complaint / dispute"]];
   return (
     <div className="flex-1 overflow-y-auto pb-6">
-      <div className="mx-4 mt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4 flex items-center gap-3">
+      <div className="px-4 pt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4 flex items-center gap-3">
         <div className={`w-16 h-16 rounded-full flex items-center justify-center ${role === "farmer" ? "bg-[#F5E3DA]" : "bg-[#DFEBEC]"}`}>
           <CircleUser size={34} color={role === "farmer" ? C.clay : C.teal} />
         </div>
@@ -619,7 +619,7 @@ function ProfileScreen({ role, profile, onSignOut }) {
         </div>
       </div>
 
-      <div className="mx-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl overflow-hidden">
+      <div className="px-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl overflow-hidden">
         {items.map(([Icon, label], i) => (
           <button key={label} className={`w-full flex items-center gap-3 px-4 py-3.5 ${i > 0 ? "border-t border-[#EEECDF]" : ""}`}>
             <Icon size={18} color={C.ink} />
@@ -632,7 +632,7 @@ function ProfileScreen({ role, profile, onSignOut }) {
       {/* Sign out */}
       <button
         onClick={onSignOut}
-        className="mx-4 mt-4 w-[calc(100%-2rem)] h-11 rounded-xl border-2 border-[#B23B3B] text-[#B23B3B] font-semibold text-[14px] flex items-center justify-center gap-2"
+        className="mt-4 w-full h-11 rounded-xl border-2 border-[#B23B3B] text-[#B23B3B] font-semibold text-[14px] flex items-center justify-center gap-2"
       >
         Sign out
       </button>
@@ -854,13 +854,15 @@ function MainApp({ profile, onSignOut }) {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto bg-[#F5F6F0] overflow-hidden border-x border-[#E4E1D3]">
+    <div className="flex flex-col h-screen w-full max-w-[430px] mx-auto bg-[#F5F6F0] overflow-hidden border border-[#D8D2C3] rounded-[32px] shadow-[0_20px_50px_rgba(27,36,32,0.15)]">
       <TopBar
         title={getTitle()}
         onBack={currentStack.length > 1 ? () => popScreen(activeTab) : null}
         right={<RoleBadge role={role} />}
       />
-      {renderContent()}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {renderContent()}
+      </div>
       <BottomNav
         role={role}
         active={activeTab}

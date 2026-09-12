@@ -1,0 +1,27 @@
+goal/objective
+
+
+1. create a new tab to which will be including sub tabs; the subtabs should be on grid cards with same design theme of rest app
+the subtabs should be-
+a. an expense calculator ( it will calculate the net profit get by farmer when expenses like transport and labour cost will be deduced from the commodity selling price (list it in quintals of the produce), (gotta let farmer enter labour cost, mandi location or buyers location or simply distance and select the vechicle to transport the commodity like mini truck, tractor, truck and tempo, and caculate the rough idea for the price))
+b. mandi travel expense (listing alll the mandi near users location entered in the supabase data base and also taking help of maps api here too)
+c. govt. schemes (fetched from the site (i guess from the data.gov.in api (gotta create api for it)))
+d. wdra warehouse (and its location from the individuals farm) [thinking of using google.mapsapi for this (need guidance, suggestion and help setting up)] and should also show the price allocated by the govt to keep the commodity there
+e. supply demand checker by comparing arrival of the commodity and showing past 7 daya bar graph trend of the supply of the commodity
+f. include the final map which shows the location of the farm from all the interested buyers and mandi distance 
+
+2. on profile add language option, like a button to change it to marathi, english and hindi.
+
+3. routing
+a. the homescreen button create lot to sell to the sell button
+b. on the sell tab on buyer's profile, route the contact tab directly to the chat or open the new chat for the buyer.
+
+4. also list the buyer on the lot according to the best price they give and we also have to list those same buyer who will be on their window create demand for the commodity and show it up here
+
+
+need suggestions
+im using supabase and twilio(which i think im not using it here for auth rn) and now will add the maps api 
+so how will we store the location, and use it to fetch the distance for all the other buyers by entering that data to the maps api for individual fetching or knowing the distance from his farm and location
+
+
+

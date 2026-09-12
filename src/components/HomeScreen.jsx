@@ -1,215 +1,282 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { Search, TrendingUp, TrendingDown, ArrowRight, Loader2, MapPin } from "lucide-react";
-import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
-import { CROPS, THEME_COLORS, formatCurrency } from "../constants/theme";
-import { getCropPriceTrend } from "../services/mandiService.js";
+import { useState, useMemo, useEffect } from "react";
+import { Search, TrendingUp, ArrowRight, Loader2, Layers, X } from "lucide-react";
+import { THEME_COLORS, formatCurrency } from "../constants/theme";
+import { getCommodityCatalog, getCommodities } from "../services/mandiService.js";
 
-export function HomeScreen({ role }) {
-  const [selectedCropId, setSelectedCropId] = useState("masoor");
+export default function HomeScreen({ role }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [tableRows, setTableRows] = useState([]);
-  const [faqChartRows, setFaqChartRows] = useState([]);
+  const [commodityCatalog, setCommodityCatalog] = useState([]);
+  const [commodities, setCommodities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCommodityName, setSelectedCommodityName] = useState("");
+  const [showAllCommodityPills, setShowAllCommodityPills] = useState(false);
 
-  const selectedCrop = useMemo(
-    () => CROPS.find((c) => c.id === "masoor") || CROPS[0],
-    []
-  );
+  const VISIBLE_COMMODITY_PILLS = 12;
 
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
 
-    getCropPriceTrend().then(({ chartData, tableData, error }) => {
-      if (!isMounted) return;
+    Promise.all([
+      getCommodityCatalog(),
+      getCommodities(),
+    ])
+      .then(([catalogResult, priceResult]) => {
+        if (!isMounted) return;
 
-      if (!error) {
-        setFaqChartRows(chartData || []);
-        setTableRows(tableData || []);
-      } else {
-        setFaqChartRows([]);
-        setTableRows([]);
-      }
-      setLoading(false);
-    });
+        const catalogNames = [...new Set(
+          (catalogResult.data || [])
+            .map((item) => (item.Name || item.name || "").trim())
+            .filter(Boolean)
+        )];
 
-    return () => { isMounted = false; };
+        setCommodityCatalog(catalogNames);
+        setSelectedCommodityName((current) => current || catalogNames[0] || "");
+
+        if (priceResult.error) {
+          setCommodities([]);
+          setLoading(false);
+          return;
+        }
+
+        const normalized = (priceResult.data || [])
+          .map((item) => ({
+            ...item,
+            id: item.id ?? `${item.commodity ?? 'commodity'}-${item.market ?? 'market'}-${item.arrival_date ?? ''}`,
+            Name: (item.commodity || item.Commodity || item.Name || item.name || "").trim(),
+            state: item.state || item.State || "—",
+            district: item.district || item.District || "—",
+            market: item.market || item.Market || "—",
+            variety: item.variety || item.Variety || "—",
+            grade: item.grade || item.Grade || "—",
+            minPrice: Number(item.min_price ?? item.minPrice ?? 0),
+            modalPrice: Number(item.modal_price ?? item.modalPrice ?? 0),
+            maxPrice: Number(item.max_price ?? item.maxPrice ?? 0),
+            price: Number(item.modal_price ?? item.modalPrice ?? item.min_price ?? item.minPrice ?? 0),
+            arrivalDate: item.arrival_date || item.Arrival_Date || "—",
+          }))
+          .filter((item) => item.Name && (Number.isFinite(item.minPrice) || Number.isFinite(item.modalPrice) || Number.isFinite(item.maxPrice)));
+
+        normalized.sort((a, b) => {
+          const priceDiff = Number(b.modalPrice ?? 0) - Number(a.modalPrice ?? 0);
+          if (priceDiff !== 0) return priceDiff;
+          return String(a.Name).localeCompare(String(b.Name));
+        });
+
+        setCommodities(normalized);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (isMounted) {
+          setCommodityCatalog([]);
+          setCommodities([]);
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Format FAQ-only chart points for Recharts
-  const formattedChartData = useMemo(() => {
-    return faqChartRows.map((row) => {
-      const d = new Date(row.arrival_date);
-      return {
-        day: d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' }),
-        price: Number(row.modal_price),
-        fullDate: d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-      };
-    });
-  }, [faqChartRows]);
+  const normalizeCommodityName = (value = "") =>
+    String(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
 
-  const filteredCrops = useMemo(
-    () => CROPS.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase())),
-    [searchQuery]
+  const filteredCommodities = useMemo(() => {
+    if (!selectedCommodityName) {
+      return commodities;
+    }
+
+    const selectedNormalized = normalizeCommodityName(selectedCommodityName);
+
+    return commodities.filter((item) => {
+      const itemNormalized = normalizeCommodityName(item.Name);
+      if (!itemNormalized || !selectedNormalized) return false;
+
+      return (
+        itemNormalized === selectedNormalized ||
+        itemNormalized.includes(selectedNormalized) ||
+        selectedNormalized.includes(itemNormalized)
+      );
+    });
+  }, [commodities, selectedCommodityName]);
+
+  const commodityNames = useMemo(
+    () => commodityCatalog,
+    [commodityCatalog]
   );
+
+  const filteredCommodityNames = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    if (!query) {
+      return commodityNames;
+    }
+
+    return commodityNames.filter((name) => name.toLowerCase().includes(query));
+  }, [commodityNames, searchQuery]);
+
+  const visibleCommodityNames = useMemo(() => {
+    if (searchQuery.trim()) {
+      return filteredCommodityNames;
+    }
+
+    if (showAllCommodityPills) {
+      return filteredCommodityNames;
+    }
+
+    return filteredCommodityNames.slice(0, VISIBLE_COMMODITY_PILLS);
+  }, [filteredCommodityNames, searchQuery, showAllCommodityPills]);
+
+  const featuredCommodity = useMemo(
+    () =>
+      commodities.find((item) => item.Name === selectedCommodityName) ||
+      commodities[0] ||
+      null,
+    [commodities, selectedCommodityName]
+  );
+
+  const averagePrice = useMemo(() => {
+    if (!filteredCommodities.length) return 0;
+
+    const pricedItems = filteredCommodities.filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+    if (!pricedItems.length) return 0;
+
+    const total = pricedItems.reduce((sum, item) => sum + item.price, 0);
+    return total / pricedItems.length;
+  }, [filteredCommodities]);
+
+  const displayedCommodities = filteredCommodities;
 
   const themeAccent = role === "farmer" ? THEME_COLORS.clay : THEME_COLORS.teal;
 
+  const heroPrice = averagePrice;
+
   return (
-    <div className="flex-1 overflow-y-auto pb-6">
-      {/* Search Header */}
+    <div className="h-full overflow-y-auto pb-6 bg-[#F9F8F3]">
       <div className="px-4 pt-4 pb-2">
         <p className="text-[13px] text-[#6B7268]">Today's mandi prices</p>
-        <div className="mt-2 flex items-center gap-2 bg-white border border-[#E4E1D3] rounded-2xl px-3 h-11">
+        <div className="mt-2 flex items-center gap-2 bg-white border border-[#E4E1D3] rounded-2xl px-3 h-11 shadow-sm">
           <Search size={17} color={THEME_COLORS.sub} />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search crop — Arhar, Masoor, Chana…"
+            placeholder="Search crop, variety, or type — Lokwan, Sharbati…"
             className="flex-1 bg-transparent outline-none text-[14px] text-[#1B2420] placeholder:text-[#9A9C8E]"
           />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} className="text-gray-400">
+              <X size={16} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Crop Pills */}
-      <div className="flex gap-2 px-4 pb-3 overflow-x-auto no-scrollbar">
-        {filteredCrops.map((c) => (
+      <div className="px-4 pb-3">
+        <div className="flex flex-wrap gap-2">
+          {visibleCommodityNames.map((commodityName) => (
+            <button
+              key={commodityName}
+              onClick={() => {
+                setSelectedCommodityName(commodityName);
+              }}
+              className={`shrink-0 px-3.5 h-9 rounded-full text-[13px] font-semibold border transition-colors ${selectedCommodityName === commodityName
+                ? "bg-[#1E4732] border-[#1E4732] text-white"
+                : "bg-white border-[#E4E1D3] text-[#1B2420]"
+                }`}
+            >
+              {commodityName}
+            </button>
+          ))}
+        </div>
+
+        {!searchQuery.trim() && filteredCommodityNames.length > VISIBLE_COMMODITY_PILLS && (
           <button
-            key={c.id}
-            onClick={() => setSelectedCropId(c.id)}
-            className={`shrink-0 px-3.5 h-9 rounded-full text-[13px] font-semibold border transition-colors ${selectedCropId === c.id
-              ? "bg-[#1E4732] border-[#1E4732] text-white"
-              : "bg-white border-[#E4E1D3] text-[#1B2420]"
-              }`}
+            onClick={() => setShowAllCommodityPills((current) => !current)}
+            className="mt-3 inline-flex items-center justify-center rounded-full border border-[#D8D2C3] bg-white px-3.5 h-9 text-[12px] font-semibold text-[#1E4732]"
           >
-            {c.name}
+            {showAllCommodityPills ? "Show less" : "Show more"}
           </button>
-        ))}
+        )}
       </div>
 
-      {/* Hero Card */}
-      <div className="mx-4 rounded-2xl bg-[#1B2420] px-4 py-4 relative overflow-hidden">
-        <div className="flex items-center justify-between">
+      <div className="mx-4 rounded-2xl bg-[#1B2420] px-4 py-4 relative overflow-hidden shadow-sm">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[11px] tracking-wide uppercase text-white/50">
-              Masoor · per quintal
+              Market average · per quintal
             </p>
             <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-[34px] font-semibold text-white">
-                {formatCurrency(selectedCrop.price)}
+              <span className="text-[30px] font-semibold text-white">
+                {formatCurrency(heroPrice)}
               </span>
             </div>
+            <p className="mt-1 text-[11px] text-white/60">
+              {featuredCommodity ? `Live from ${featuredCommodity.market}` : `${commodities.length} live mandi records`}
+            </p>
           </div>
-          <div
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[13px] font-semibold ${selectedCrop.change >= 0
-              ? "bg-[#2C7A4B]/20 text-[#8FE3AC]"
-              : "bg-[#B23B3B]/20 text-[#F3A5A5]"
-              }`}
-          >
-            {selectedCrop.change >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {selectedCrop.change >= 0 ? "+" : ""}
-            {selectedCrop.change}
+
+          <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold bg-[#2C7A4B]/20 text-[#8FE3AC]">
+            <TrendingUp size={14} />
+            Live
           </div>
         </div>
       </div>
 
-      {/* Recharts Area Chart - FAQ Quality Only */}
-      <div className="mx-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl p-3">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-[12px] font-semibold text-[#1B2420]">
-            Masoor Price Trend (FAQ Grade)
-          </p>
-          <span className="text-[10px] bg-[#1E4732]/10 text-[#1E4732] font-medium px-2 py-0.5 rounded-full">
-            FAQ Quality
-          </span>
-        </div>
-        <div className="relative w-full h-[110px] min-h-[110px]">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/70 z-10 rounded-xl">
-              <Loader2 size={24} className="animate-spin text-[#1E4732]" />
-            </div>
-          )}
-
-          {!loading && formattedChartData.length === 0 ? (
-            <div className="flex h-full items-center justify-center text-[12px] text-gray-400">
-              No FAQ quality price records found
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={110} minWidth={100} minHeight={110}>
-              <AreaChart data={formattedChartData} margin={{ top: 6, right: 4, left: -28, bottom: 0 }}>
-                <XAxis
-                  dataKey="day"
-                  tick={{ fontSize: 10, fill: THEME_COLORS.sub }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis hide domain={['auto', 'auto']} />
-                <Tooltip
-                  formatter={(v) => [formatCurrency(v), "FAQ Price"]}
-                  labelFormatter={(_, payload) => payload[0]?.payload?.fullDate || ''}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="price"
-                  stroke={THEME_COLORS.gold}
-                  fillOpacity={0.2}
-                  fill={THEME_COLORS.gold}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      {/* Detailed Mandi Table - Shows ALL Varieties (FAQ + Local) */}
       <div className="mx-4 mt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-[14px] font-bold text-[#1B2420] flex items-center gap-1.5">
-            <MapPin size={16} className="text-[#1E4732]" /> Mandi Price Breakdown
+            <Layers size={16} className="text-[#1E4732]" /> Mandi Price Table
           </h3>
-          <span className="text-[11px] text-[#6B7268]">{tableRows.length} Records</span>
+          <span className="text-[12px] font-semibold text-[#1E4732]">
+            {selectedCommodityName ? `Showing ${selectedCommodityName}` : "Select a commodity"}
+          </span>
         </div>
 
         {loading ? (
           <div className="py-6 text-center text-gray-400 text-[12px] flex items-center justify-center gap-2">
-            <Loader2 size={16} className="animate-spin text-[#1E4732]" /> Loading mandi rates…
+            <Loader2 size={16} className="animate-spin text-[#1E4732]" /> Loading commodities…
           </div>
-        ) : tableRows.length === 0 ? (
-          <p className="text-[12px] text-gray-400 py-4 text-center">No mandi breakdown data available.</p>
+        ) : filteredCommodities.length === 0 ? (
+          <p className="text-[12px] text-gray-400 py-6 text-center">
+            No commodities match your search.
+          </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-[12px] border-collapse">
+            <table className="min-w-full text-left text-[12px]">
               <thead>
-                <tr className="border-b border-[#E4E1D3] text-[#6B7268] font-semibold">
-                  <th className="pb-2">Market / Location</th>
-                  <th className="pb-2">Variety / Grade</th>
-                  <th className="pb-2">Date</th>
-                  <th className="pb-2 text-right">Modal Price</th>
+                <tr className="border-b border-[#E4E1D3] text-[#6B7268]">
+                  <th className="pb-2 pr-3 font-semibold">Commodity</th>
+                  <th className="pb-2 pr-3 font-semibold">State</th>
+                  <th className="pb-2 pr-3 font-semibold">District</th>
+                  <th className="pb-2 pr-3 font-semibold">Market</th>
+                  <th className="pb-2 pr-3 font-semibold text-right">Min</th>
+                  <th className="pb-2 pr-3 font-semibold text-right">Modal</th>
+                  <th className="pb-2 pr-3 font-semibold text-right">Max</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#F0EDE0]">
-                {tableRows.map((row) => (
-                  <tr key={row.id || `${row.market}-${row.arrival_date}-${row.variety}`} className="hover:bg-[#F9F8F3] transition-colors">
-                    <td className="py-2.5">
-                      <p className="font-semibold text-[#1B2420]">{row.market}</p>
-                      <p className="text-[10px] text-[#6B7268]">{row.district}, {row.state}</p>
+              <tbody>
+                {displayedCommodities.map((item) => (
+                  <tr key={item.id} className="border-b border-[#F0EDE0] last:border-b-0">
+                    <td className="py-2.5 pr-3">
+                      <button
+                        onClick={() => {
+                          setSelectedCommodityName(item.Name);
+                        }}
+                        className="font-semibold text-[#1B2420] hover:text-[#1E4732]"
+                      >
+                        {item.Name}
+                      </button>
                     </td>
-                    <td className="py-2.5 text-[#1B2420]">
-                      <span className="font-medium">{row.variety || row.commodity}</span>
-                      {row.grade && (
-                        <span className="block text-[10px] text-[#6B7268]">Grade: {row.grade}</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 text-[#6B7268] whitespace-nowrap">
-                      {new Date(row.arrival_date).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric'
-                      })}
-                    </td>
-                    <td className="py-2.5 text-right font-bold text-[#1E4732] whitespace-nowrap">
-                      {formatCurrency(row.modal_price)}
-                    </td>
+                    <td className="py-2.5 pr-3 text-[#6B7268]">{item.state}</td>
+                    <td className="py-2.5 pr-3 text-[#6B7268]">{item.district}</td>
+                    <td className="py-2.5 pr-3 text-[#6B7268]">{item.market}</td>
+                    <td className="py-2.5 pr-3 text-right text-[#6B7268]">{formatCurrency(item.minPrice)}</td>
+                    <td className="py-2.5 pr-3 text-right font-semibold text-[#1E4732]">{formatCurrency(item.modalPrice)}</td>
+                    <td className="py-2.5 pr-3 text-right text-[#6B7268]">{formatCurrency(item.maxPrice)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -218,9 +285,8 @@ export function HomeScreen({ role }) {
         )}
       </div>
 
-      {/* Action Button */}
       <button
-        className="mx-4 mt-4 w-[calc(100%-2rem)] h-11 rounded-xl text-white font-semibold text-[14px] flex items-center justify-center gap-1.5"
+        className="mx-4 mt-5 w-[calc(100%-2rem)] h-11 rounded-xl text-white font-semibold text-[14px] flex items-center justify-center gap-1.5 shadow-sm"
         style={{ backgroundColor: themeAccent }}
       >
         {role === "farmer" ? "Create a lot to sell" : "Browse lots to buy"} <ArrowRight size={16} />

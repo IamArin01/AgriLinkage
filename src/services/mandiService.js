@@ -1,55 +1,69 @@
 import { supabase } from '../lib/supabaseClient';
 
 /**
- * Fetch Maharashtra price data and split into FAQ-only chart data vs full table data.
+ * Fetch all commodity names from public.Commodity table.
  */
-export async function getCropPriceTrend() {
+export async function getCommodityCatalog() {
+  try {
+    const { data, error } = await supabase
+      .from('Commodity')
+      .select('id, Name')
+      .order('Name', { ascending: true });
+
+    if (error) {
+      console.error('[getCommodityCatalog] Supabase Error:', error);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    console.error('[getCommodityCatalog] Exception:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * Fetch all commodity market records from public.agmarknet_prices table.
+ */
+export async function getCommodities() {
   try {
     const { data, error } = await supabase
       .from('agmarknet_prices')
-      .select('id, modal_price, min_price, max_price, arrival_date, commodity, market, state, district, variety, grade')
-      .ilike('state', '%Maharashtra%')
-      .order('arrival_date', { ascending: true });
+      .select('id, state, district, market, commodity, min_price, modal_price, max_price, arrival_date, variety, grade')
+      .order('arrival_date', { ascending: false });
+
+    if (error) {
+      console.error('[getCommodities] Supabase Error:', error);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (err) {
+    console.error('[getCommodities] Exception:', err);
+    return { data: null, error: err };
+  }
+}
+
+/**
+ * Fetch price trends from public.agmarknet_prices
+ */
+export async function getCropPriceTrend(commodityName = '') {
+  try {
+    const { data, error } = await supabase
+      .from('agmarknet_prices')
+      .select('modal_price, arrival_date, commodity, market')
+      .ilike('commodity', `%${commodityName}%`)
+      .order('arrival_date', { ascending: false })
+      .limit(7);
 
     if (error) {
       console.error('[getCropPriceTrend] Error:', error);
-      return { chartData: [], tableData: [], error };
+      return { data: null, error };
     }
 
-    const allRows = data || [];
-
-    // 1. Table gets EVERYTHING (FAQ + Local + all varieties), newest dates first
-    const tableData = [...allRows].reverse();
-
-    // 2. Chart gets ONLY FAQ quality entries
-    const faqRows = allRows.filter((row) => {
-      const varietyStr = (row.variety || '').toLowerCase();
-      const gradeStr = (row.grade || '').toLowerCase();
-
-      // Match 'faq' in either grade or variety column
-      return gradeStr.includes('faq') || varietyStr.includes('faq');
-    });
-
-    // Deduplicate by date (takes max price if multiple FAQ entries exist on the same date)
-    const chartMap = {};
-    faqRows.forEach((row) => {
-      const date = row.arrival_date;
-      const price = Number(row.modal_price);
-
-      if (!chartMap[date] || price > chartMap[date].modal_price) {
-        chartMap[date] = {
-          arrival_date: date,
-          modal_price: price,
-          commodity: row.commodity
-        };
-      }
-    });
-
-    const chartData = Object.values(chartMap);
-
-    return { chartData, tableData, error: null };
+    return { data, error: null };
   } catch (err) {
     console.error('[getCropPriceTrend] Exception:', err);
-    return { chartData: [], tableData: [], error: err };
+    return { data: null, error: err };
   }
 }
