@@ -111,6 +111,51 @@ const INITIAL_CHATS = {
   ],
 };
 
+const TOOL_ITEMS = [
+  {
+    key: "expense-calculator",
+    name: "Expense Calculator",
+    subtitle: "Estimate net profit after transport and labour costs",
+    badge: "Profit",
+    icon: Search,
+  },
+  {
+    key: "mandi-travel",
+    name: "Mandi Travel Expense",
+    subtitle: "Compare mandi options and estimated travel cost",
+    badge: "Travel",
+    icon: MapPin,
+  },
+  {
+    key: "govt-schemes",
+    name: "Govt Schemes",
+    subtitle: "Browse crop and farmer support schemes",
+    badge: "Schemes",
+    icon: Receipt,
+  },
+  {
+    key: "wdra-warehouse",
+    name: "WDRA Warehouse",
+    subtitle: "View warehouse locations and storage rate references",
+    badge: "Storage",
+    icon: Boxes,
+  },
+  {
+    key: "supply-demand",
+    name: "Supply & Demand",
+    subtitle: "Check recent commodity arrival trends",
+    badge: "Trend",
+    icon: TrendingUp,
+  },
+  {
+    key: "map-overview",
+    name: "Map Overview",
+    subtitle: "See farm, mandi and buyer locations on one map view",
+    badge: "Map",
+    icon: MapPin,
+  },
+];
+
 /* ------------------------------- primitives ------------------------------- */
 function TopBar({ title, onBack, right }) {
   return (
@@ -596,12 +641,14 @@ function ChatDetailScreen({ convo, role, onSendOffer, onConfirm, onPaid }) {
 }
 
 /* -------------------------------- Profile ----------------------------------- */
-function ProfileScreen({ role, profile, onSignOut }) {
+function ProfileScreen({ role, profile, language, onLanguageChange, onSignOut }) {
   const displayName = profile?.name || (role === "farmer" ? "Farmer" : "Buyer");
   const displayPhone = profile?.phone ? profile.phone.replace("+91", "+91 ") : "—";
   const items = role === "farmer"
     ? [[Boxes, "Your crops & inventory"], [Receipt, "Past transactions"], [IdCard, "Account details"], [FileWarning, "Complaint / dispute"]]
     : [[Boxes, "Your deals & inventory"], [Receipt, "Past transactions"], [IdCard, "Account details"], [FileWarning, "Complaint / dispute"]];
+  const languages = ["English", "हिन्दी", "मराठी"];
+
   return (
     <div className="flex-1 overflow-y-auto pb-6">
       <div className="px-4 pt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4 flex items-center gap-3">
@@ -619,6 +666,23 @@ function ProfileScreen({ role, profile, onSignOut }) {
         </div>
       </div>
 
+      <div className="px-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl p-4">
+        <p className="text-[12px] font-semibold text-[#1B2420] mb-2">Language</p>
+        <div className="flex flex-wrap gap-2">
+          {languages.map((option) => (
+            <button
+              key={option}
+              onClick={() => onLanguageChange(option)}
+              className={`px-3 py-2 rounded-full text-[12px] font-semibold border ${language === option
+                ? "bg-[#1E4732] border-[#1E4732] text-white"
+                : "bg-white border-[#E4E1D3] text-[#1B2420]"}`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="px-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl overflow-hidden">
         {items.map(([Icon, label], i) => (
           <button key={label} className={`w-full flex items-center gap-3 px-4 py-3.5 ${i > 0 ? "border-t border-[#EEECDF]" : ""}`}>
@@ -629,7 +693,6 @@ function ProfileScreen({ role, profile, onSignOut }) {
         ))}
       </div>
 
-      {/* Sign out */}
       <button
         onClick={onSignOut}
         className="mt-4 w-full h-11 rounded-xl border-2 border-[#B23B3B] text-[#B23B3B] font-semibold text-[14px] flex items-center justify-center gap-2"
@@ -640,12 +703,136 @@ function ProfileScreen({ role, profile, onSignOut }) {
   );
 }
 
+function ToolsScreen({ onOpenTool }) {
+  return (
+    <div className="flex-1 overflow-y-auto pb-6">
+      <div className="px-4 pt-4">
+        <p className="text-[18px] font-semibold text-[#1B2420]">Farmer tools</p>
+        <p className="text-[12px] text-[#6B7268] mt-1">Plan transport, compare mandi options, and review support programs.</p>
+      </div>
+
+      <div className="px-4 mt-4 grid grid-cols-2 gap-3">
+        {TOOL_ITEMS.map((tool) => {
+          const Icon = tool.icon;
+          return (
+            <button
+              key={tool.key}
+              onClick={() => onOpenTool(tool)}
+              className="text-left bg-white border border-[#E4E1D3] rounded-2xl p-3.5 shadow-sm active:scale-[0.99] transition-transform"
+            >
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-1 rounded-full bg-[#E4ECE4] text-[10px] font-semibold text-[#1E4732]">
+                  {tool.badge}
+                </span>
+                <Icon size={18} color={C.teal} />
+              </div>
+              <p className="mt-3 text-[14px] font-semibold text-[#1B2420]">{tool.name}</p>
+              <p className="mt-1 text-[11px] text-[#6B7268]">{tool.subtitle}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ToolDetailScreen({ tool, role }) {
+  const detailMap = {
+    "expense-calculator": {
+      title: "Expense Calculator",
+      description: "Estimate the rough net profit after labour, transport, and mandi-related costs.",
+      bullets: [
+        "Enter quantity in quintals and expected selling price.",
+        "Add labour cost, distance, and vehicle type for transport.",
+        "Compare estimated profit across mandi options.",
+      ],
+    },
+    "mandi-travel": {
+      title: "Mandi Travel Expense",
+      description: "Compare nearest mandis from the saved farm or buyer location and estimate travel cost.",
+      bullets: [
+        "Shows mandi distance and estimated ETA from the saved location.",
+        "Supports transport options like mini truck, tractor, truck, and tempo.",
+        "Prepares the cost comparison used in the calculator.",
+      ],
+    },
+    "govt-schemes": {
+      title: "Govt Schemes",
+      description: "Browse relevant government support schemes by crop, state, or farmer category.",
+      bullets: [
+        "Fetch and normalize data from an external schemes source.",
+        "Cache results in Supabase to reduce repeated API calls.",
+        "Filter the schemes list for the farmer’s crop and location.",
+      ],
+    },
+    "wdra-warehouse": {
+      title: "WDRA Warehouse",
+      description: "View nearby warehouses and storage rate references for agricultural produce.",
+      bullets: [
+        "Display nearest warehouses from the farmer’s location.",
+        "Show estimated distance and storage cost per quintal.",
+        "Connect warehouse placement with the travel expense flow.",
+      ],
+    },
+    "supply-demand": {
+      title: "Supply & Demand",
+      description: "Review the last 7 days of arrivals for selected commodities to spot supply pressure.",
+      bullets: [
+        "Use daily arrival data from mandi records in Supabase.",
+        "Present a compact bar chart for the selected commodity.",
+        "Highlight sudden spikes or drops in supply.",
+      ],
+    },
+    "map-overview": {
+      title: "Map Overview",
+      description: "See farm, mandi, and buyer locations together in one location-aware dashboard.",
+      bullets: [
+        "Store farm, mandi, and buyer coordinates for consistent distance checks.",
+        "Render a unified map view for agricultural logistics.",
+        "Support the final distance and buyer matching workflow.",
+      ],
+    },
+  };
+
+  const detail = detailMap[tool?.key] || detailMap["expense-calculator"];
+
+  return (
+    <div className="flex-1 overflow-y-auto pb-6">
+      <div className="px-4 pt-4">
+        <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-[#6B7268]">{role === "farmer" ? "Farmer tool" : "Buyer tool"}</p>
+              <p className="mt-1 text-[22px] font-semibold text-[#1B2420]">{detail.title}</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-[#E4ECE4] flex items-center justify-center">
+              {tool?.icon ? <tool.icon size={22} color={C.teal} /> : <Search size={22} color={C.teal} />}
+            </div>
+          </div>
+
+          <p className="mt-3 text-[13px] text-[#6B7268]">{detail.description}</p>
+
+          <div className="mt-4 space-y-2">
+            {detail.bullets.map((bullet) => (
+              <div key={bullet} className="flex items-start gap-2 rounded-xl bg-[#F5F6F0] px-3 py-2.5">
+                <Check size={14} color={C.up} className="mt-0.5" />
+                <p className="text-[12px] text-[#1B2420]">{bullet}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------- shell / nav -------------------------------- */
 function BottomNav({ role, active, onChange }) {
   const tabs = [
     { key: "home", label: "Home", icon: Home },
     { key: "trade", label: role === "farmer" ? "Sell" : "Buy", icon: role === "farmer" ? Sprout : ShoppingBasket },
     { key: "chat", label: "Chat", icon: MessageCircle },
+    { key: "tools", label: "Tools", icon: Search },
     { key: "profile", label: "Profile", icon: CircleUser },
   ];
   const accent = role === "farmer" ? C.clay : C.teal;
@@ -670,15 +857,17 @@ const baseStacks = () => ({
   home: [{ name: "list" }],
   trade: [{ name: "list" }],
   chat: [{ name: "list" }],
+  tools: [{ name: "list" }],
   profile: [{ name: "main" }],
 });
 
-function MainApp({ profile, onSignOut }) {
+function MainApp({ profile, onSignOut, onProfileUpdate }) {
   const [role, setRole] = useState(profile?.role || "farmer");
   const [activeTab, setActiveTab] = useState("home");
   const [stacks, setStacks] = useState(baseStacks);
   const [lots, setLots] = useState(INITIAL_LOTS);
   const [chats, setChats] = useState(INITIAL_CHATS);
+  const [language, setLanguage] = useState(profile?.preferredLanguage || profile?.preferred_language || "English");
 
   const pushScreen = (tab, screen) => {
     setStacks((s) => ({ ...s, [tab]: [...s[tab], screen] }));
@@ -830,8 +1019,34 @@ function MainApp({ profile, onSignOut }) {
       }
     }
 
+    if (activeTab === "tools") {
+      if (currentScreen.name === "list") {
+        return <ToolsScreen onOpenTool={(tool) => pushScreen("tools", { name: "tool_detail", tool })} />;
+      }
+      if (currentScreen.name === "tool_detail") {
+        return <ToolDetailScreen tool={currentScreen.tool} role={role} />;
+      }
+    }
+
     if (activeTab === "profile") {
-      return <ProfileScreen role={role} profile={profile} onSignOut={onSignOut} />;
+      return (
+        <ProfileScreen
+          role={role}
+          profile={profile}
+          language={language}
+          onLanguageChange={(nextLanguage) => {
+            setLanguage(nextLanguage);
+            if (onProfileUpdate) {
+              onProfileUpdate((prev) => ({
+                ...prev,
+                preferredLanguage: nextLanguage,
+                preferred_language: nextLanguage,
+              }));
+            }
+          }}
+          onSignOut={onSignOut}
+        />
+      );
     }
 
     return null;
@@ -848,6 +1063,10 @@ function MainApp({ profile, onSignOut }) {
     if (activeTab === "chat") {
       if (currentScreen.name === "detail") return currentScreen.convo?.person?.name || "Chat";
       return "Messages";
+    }
+    if (activeTab === "tools") {
+      if (currentScreen.name === "tool_detail") return currentScreen.tool?.name || "Tool";
+      return "Tools";
     }
     if (activeTab === "profile") return "Profile";
     return "AgriTrade";
@@ -888,7 +1107,9 @@ export default function AgriTradeApp() {
         .select("*")
         .eq("id", userId)
         .maybeSingle();
-      if (existingProfile) setProfile(existingProfile);
+      if (existingProfile) {
+        setProfile(existingProfile);
+      }
     });
   }, []);
 
@@ -903,7 +1124,11 @@ export default function AgriTradeApp() {
 
   return (
     <TradeProvider>
-      <MainApp profile={profile} onSignOut={handleSignOut} />
+      <MainApp
+        profile={profile}
+        onSignOut={handleSignOut}
+        onProfileUpdate={setProfile}
+      />
     </TradeProvider>
   );
 }
