@@ -301,6 +301,70 @@ export async function getCropPriceTrend(commodityName = '') {
   }
 }
 
+export async function getCommodityArrivalSeries(commodityName = '', limit = 7) {
+  const normalizedCommodity = String(commodityName || '').trim();
+
+  try {
+    let query = supabase
+      .from('agmarknet_prices')
+      .select('commodity, arrival_date, modal_price, min_price, max_price, market')
+      .not('arrival_date', 'is', null)
+      .order('arrival_date', { ascending: false })
+      .limit(200);
+
+    if (normalizedCommodity) {
+      query = query.ilike('commodity', `%${normalizedCommodity}%`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('[getCommodityArrivalSeries] Error:', error);
+      return { data: [], error };
+    }
+
+    const grouped = new Map();
+
+    (data || []).forEach((row) => {
+      const dateKey = row.arrival_date;
+      if (!dateKey) return;
+
+      const parsedDate = new Date(dateKey);
+      if (Number.isNaN(parsedDate.getTime())) return;
+
+      const dayKey = parsedDate.toISOString().slice(0, 10);
+      const existing = grouped.get(dayKey) || {
+        date: dayKey,
+        label: parsedDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+        arrivals: 0,
+        modalTotal: 0,
+      };
+
+      const modalPrice = Number(row.modal_price ?? row.Modal_Price ?? 0);
+      existing.arrivals += 1;
+      if (Number.isFinite(modalPrice) && modalPrice > 0) {
+        existing.modalTotal += modalPrice;
+      }
+
+      grouped.set(dayKey, existing);
+    });
+
+    const series = [...grouped.values()]
+      .sort((first, second) => new Date(first.date) - new Date(second.date))
+      .slice(-Math.max(1, Number(limit) || 7))
+      .map((entry) => ({
+        day: entry.label,
+        arrivals: entry.arrivals,
+        avgModalPrice: entry.arrivals ? Math.round(entry.modalTotal / entry.arrivals) : 0,
+      }));
+
+    return { data: series, error: null };
+  } catch (err) {
+    console.error('[getCommodityArrivalSeries] Exception:', err);
+    return { data: [], error: err };
+  }
+}
+
 /**
  * Fetch mandi locations from the configured supabase table.
  */

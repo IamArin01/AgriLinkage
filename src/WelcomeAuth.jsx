@@ -224,7 +224,7 @@ export default function WelcomeAuth({ onAuthed }) {
               <ChevronLeft size={18} color="#fff" />
             </button>
           )}
-          <p className="text-[24px] font-semibold text-white text-center">AgriTrade</p>
+          <p className="text-[24px] font-semibold text-white text-center">AgriLinkage</p>
           <p className="text-[12px] text-white/60 text-center mt-1">
             Direct from farm gate to the right buyer
           </p>

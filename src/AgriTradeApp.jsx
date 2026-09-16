@@ -2,7 +2,15 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from "react-leaflet";
 import WelcomeAuth from "./WelcomeAuth";
 import { supabase } from "./lib/supabaseClient";
-import { getGovernmentSchemes, getMandiLocations, getNearbyMandis, getNearbyWarehouses, getWarehouses } from "./services/mandiService";
+import {
+  getCommodityArrivalSeries,
+  getCommodities,
+  getGovernmentSchemes,
+  getMandiLocations,
+  getNearbyMandis,
+  getNearbyWarehouses,
+  getWarehouses,
+} from "./services/mandiService";
 import {
   Home, Sprout, ShoppingBasket, MessageCircle, CircleUser, Search,
   ChevronLeft, Plus, TrendingUp, MapPin, Phone, Star,
@@ -501,7 +509,7 @@ function PersonDetailScreen({ person, lotSummary, onContact }) {
           <div className="flex items-center gap-1 mt-1">
             <Star size={13} color={C.gold} fill={C.gold} />
             <span className="text-[12px] font-semibold text-[#1B2420]">{person.rating || 4.3}</span>
-            <span className="text-[11px] text-[#6B7268]">rating on AgriTrade</span>
+            <span className="text-[11px] text-[#6B7268]">rating on AgriLinkage</span>
           </div>
         </div>
       </div>
@@ -512,7 +520,7 @@ function PersonDetailScreen({ person, lotSummary, onContact }) {
       </div>
 
       <div className="px-4 mt-3 bg-white border border-[#E4E1D3] rounded-2xl p-3.5">
-        <p className="text-[12px] font-semibold text-[#1B2420] mb-2">Past transactions on AgriTrade</p>
+        <p className="text-[12px] font-semibold text-[#1B2420] mb-2">Past transactions on AgriLinkage</p>
         {[["14 Jun", "Masoor · 80 q", "₹4,320/q"], ["2 Apr", "Chana · 40 q", "₹4,980/q"]].map((t, i) => (
           <div key={i} className="flex items-center justify-between py-1.5 border-t border-[#EEECDF] first:border-t-0 first:pt-0">
             <span className="text-[12px] text-[#6B7268]">{t[0]} · {t[1]}</span>
@@ -768,7 +776,7 @@ function ProfileScreen({ role, profile, language, onLanguageChange, onSignOut })
           <div className="flex items-center gap-1 mt-1">
             <Star size={13} color={C.gold} fill={C.gold} />
             <span className="text-[12px] font-semibold text-[#1B2420]">4.5</span>
-            <span className="text-[11px] text-[#6B7268]">· AgriTrade rating</span>
+            <span className="text-[11px] text-[#6B7268]">· AgriLinkage rating</span>
           </div>
         </div>
       </div>
@@ -986,9 +994,59 @@ function ToolDetailScreen({ tool, role, profile }) {
     vehicle: "tractor",
     mandi: "Akola APMC",
   });
-
-  const [selectedVehicle, setSelectedVehicle] = useState("tractor");
   const [selectedSchemeFilter, setSelectedSchemeFilter] = useState("All");
+  const [supplyCommodityOptions, setSupplyCommodityOptions] = useState(["Masoor", "Chana", "Soybean", "Wheat"]);
+  const [supplyCommodity, setSupplyCommodity] = useState("Masoor");
+  const [supplySeries, setSupplySeries] = useState([]);
+
+  useEffect(() => {
+    if (tool?.key !== "supply-demand") return;
+
+    let isMounted = true;
+
+    const loadSupplyData = async () => {
+      try {
+        const { data = [] } = await getCommodities();
+        const availableNames = [...new Set(
+          (data || [])
+            .map((item) => (item.commodity || item.Commodity || item.Name || item.name || "").trim())
+            .filter(Boolean),
+        )];
+
+        if (!isMounted) return;
+
+        const nextOptions = availableNames.length ? availableNames.slice(0, 12) : ["Masoor", "Chana", "Soybean", "Wheat"];
+        setSupplyCommodityOptions((currentOptions) => {
+          if (currentOptions.length !== nextOptions.length || currentOptions.some((value, index) => value !== nextOptions[index])) {
+            return nextOptions;
+          }
+          return currentOptions;
+        });
+
+        const targetCommodity = nextOptions.includes(supplyCommodity)
+          ? supplyCommodity
+          : nextOptions.find((name) => name.toLowerCase().includes("masoor")) || nextOptions[0] || "Masoor";
+
+        if (targetCommodity !== supplyCommodity) {
+          setSupplyCommodity(targetCommodity);
+        }
+
+        const { data: trendData = [] } = await getCommodityArrivalSeries(targetCommodity, 7);
+        if (isMounted) setSupplySeries(trendData);
+      } catch (error) {
+        console.error('[ToolDetailScreen] Failed to load supply trend:', error);
+        if (isMounted) {
+          setSupplySeries(SUPPLY_DEMAND_SERIES);
+        }
+      }
+    };
+
+    loadSupplyData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [tool?.key, supplyCommodity]);
 
   const nearbyMandis = useMemo(
     () => getNearbyMandis(mandiData, profile, 10),
@@ -1000,7 +1058,7 @@ function ToolDetailScreen({ tool, role, profile }) {
   );
 
   const mandiComparisons = useMemo(() => nearbyMandis.map((mandi) => {
-    const rate = VEHICLE_COSTS[selectedVehicle] ?? VEHICLE_COSTS.tractor;
+    const rate = VEHICLE_COSTS[expenseForm.vehicle] ?? VEHICLE_COSTS.tractor;
     const fallbackDistance = Number.parseFloat(mandi.distance) || 0;
     const distanceKm = mandi.distanceKm ?? fallbackDistance;
     const travelCost = Math.round(distanceKm * rate * 0.85);
@@ -1013,7 +1071,7 @@ function ToolDetailScreen({ tool, role, profile }) {
       travelCost,
       estimatedProfit,
     };
-  }), [nearbyMandis, selectedVehicle, expenseForm]);
+  }), [nearbyMandis, expenseForm]);
 
   const vehicleOptions = Object.entries(VEHICLE_COSTS).map(([key, rate]) => ({
     key,
@@ -1021,7 +1079,7 @@ function ToolDetailScreen({ tool, role, profile }) {
     rate,
   }));
 
-  const selectedMandi = mandiComparisons.find((entry) => entry.mandi === expenseForm.mandi) || mandiComparisons[0];
+  const selectedMandi = mandiComparisons.find((entry) => entry.mandi === expenseForm.mandi) || mandiComparisons[0] || null;
 
   const grossRevenue = Math.round((expenseForm.qty || 0) * (expenseForm.price || 0));
   const transportCost = Math.round((expenseForm.distance || 0) * (VEHICLE_COSTS[expenseForm.vehicle] || 0));
@@ -1142,8 +1200,8 @@ function ToolDetailScreen({ tool, role, profile }) {
           {vehicleOptions.map((vehicle) => (
             <button
               key={vehicle.key}
-              onClick={() => setSelectedVehicle(vehicle.key)}
-              className={`px-3 h-8 rounded-full text-[12px] font-semibold border ${selectedVehicle === vehicle.key ? "bg-[#1E4732] border-[#1E4732] text-white" : "bg-white border-[#E4E1D3] text-[#1B2420]"}`}
+              onClick={() => setExpenseForm((prev) => ({ ...prev, vehicle: vehicle.key }))}
+              className={`px-3 h-8 rounded-full text-[12px] font-semibold border ${expenseForm.vehicle === vehicle.key ? "bg-[#1E4732] border-[#1E4732] text-white" : "bg-white border-[#E4E1D3] text-[#1B2420]"}`}
             >
               {vehicle.label}
             </button>
@@ -1156,7 +1214,7 @@ function ToolDetailScreen({ tool, role, profile }) {
           {nearbyMandis.map((mandi) => {
             const fallbackDistance = Number.parseFloat(mandi.distance) || 0;
             const distanceKm = mandi.distanceKm ?? fallbackDistance;
-            const travelCost = Math.round(distanceKm * (VEHICLE_COSTS[selectedVehicle] || 0));
+            const travelCost = Math.round(distanceKm * (VEHICLE_COSTS[expenseForm.vehicle] || 0));
             return (
               <div key={mandi.mandi || mandi.id} className="rounded-xl border border-[#E4E1D3] bg-[#F5F6F0] p-3">
                 <div className="flex items-start justify-between">
@@ -1167,7 +1225,7 @@ function ToolDetailScreen({ tool, role, profile }) {
                   <MapPin size={16} color={C.teal} />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-[#6B7268]">
-                  <span>Vehicle: {selectedVehicle.replace("-", " ")}</span>
+                  <span>Vehicle: {expenseForm.vehicle.replace("-", " ")}</span>
                   <span>Travel {fmtRs(travelCost)}</span>
                 </div>
               </div>
@@ -1266,44 +1324,64 @@ function ToolDetailScreen({ tool, role, profile }) {
     </div>
   );
 
-  const renderSupplyDemand = () => (
-    <div className="space-y-4">
-      <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
-        <p className="text-[14px] font-semibold text-[#1B2420]">Masoor arrivals (last 7 days)</p>
-        <div className="mt-3 h-44">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={SUPPLY_DEMAND_SERIES}>
-              <defs>
-                <linearGradient id="supplyFill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="5%" stopColor="#2A6773" stopOpacity={0.45} />
-                  <stop offset="95%" stopColor="#2A6773" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6B7268' }} />
-              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6B7268' }} />
-              <Tooltip />
-              <Area type="monotone" dataKey="arrivals" stroke="#2A6773" fill="url(#supplyFill)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+  const renderSupplyDemand = () => {
+    const chartData = supplySeries.length ? supplySeries : SUPPLY_DEMAND_SERIES;
+    const avgArrivals = chartData.reduce((sum, item) => sum + Number(item.arrivals || 0), 0) / (chartData.length || 1);
+    const peakArrivals = Math.max(...chartData.map((item) => Number(item.arrivals || 0)), 0);
+    const firstValue = Number(chartData[0]?.arrivals || 0);
+    const lastValue = Number(chartData[chartData.length - 1]?.arrivals || 0);
+    const trendPercent = firstValue ? Math.round(((lastValue - firstValue) / firstValue) * 100) : 0;
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
-          <p className="text-[11px] text-[#6B7268]">Avg/day</p>
-          <p className="mt-1 text-[16px] font-semibold text-[#1B2420]">533</p>
+    return (
+      <div className="space-y-4">
+        <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[14px] font-semibold text-[#1B2420]">{supplyCommodity} arrivals (last 7 days)</p>
+            <select
+              value={supplyCommodity}
+              onChange={(event) => setSupplyCommodity(event.target.value)}
+              className="text-[12px] border border-[#E4E1D3] rounded-xl bg-[#F9F8F3] px-2 py-1.5"
+            >
+              {supplyCommodityOptions.map((commodity) => (
+                <option key={commodity} value={commodity}>{commodity}</option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-3 h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="supplyFill" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="5%" stopColor="#2A6773" stopOpacity={0.45} />
+                    <stop offset="95%" stopColor="#2A6773" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6B7268' }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6B7268' }} />
+                <Tooltip />
+                <Area type="monotone" dataKey="arrivals" stroke="#2A6773" fill="url(#supplyFill)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
-          <p className="text-[11px] text-[#6B7268]">Peak</p>
-          <p className="mt-1 text-[16px] font-semibold text-[#1E4732]">720</p>
-        </div>
-        <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
-          <p className="text-[11px] text-[#6B7268]">Trend</p>
-          <p className="mt-1 text-[16px] font-semibold text-[#B23B3B]">+18%</p>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
+            <p className="text-[11px] text-[#6B7268]">Avg/day</p>
+            <p className="mt-1 text-[16px] font-semibold text-[#1B2420]">{Math.round(avgArrivals)}</p>
+          </div>
+          <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
+            <p className="text-[11px] text-[#6B7268]">Peak</p>
+            <p className="mt-1 text-[16px] font-semibold text-[#1E4732]">{peakArrivals}</p>
+          </div>
+          <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
+            <p className="text-[11px] text-[#6B7268]">Trend</p>
+            <p className={`mt-1 text-[16px] font-semibold ${trendPercent >= 0 ? '#1E4732' : '#B23B3B'}`}>{trendPercent >= 0 ? '+' : ''}{trendPercent}%</p>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderMapOverview = () => {
     const nearestMandi = nearbyMandis[0];
@@ -1605,7 +1683,7 @@ function MainApp({ profile, onSignOut, onProfileUpdate }) {
   };
 
   const getTitle = () => {
-    if (activeTab === "home") return "AgriTrade";
+    if (activeTab === "home") return "AgriLinkage";
     if (activeTab === "trade") {
       if (currentScreen.name === "create_lot") return "Publish Lot";
       if (currentScreen.name === "lot_detail") return currentScreen.lot?.crop || "Lot Details";
@@ -1621,7 +1699,7 @@ function MainApp({ profile, onSignOut, onProfileUpdate }) {
       return "Tools";
     }
     if (activeTab === "profile") return "Profile";
-    return "AgriTrade";
+    return "AgriLinkage";
   };
 
   return (
@@ -1681,7 +1759,7 @@ export default function AgriTradeApp() {
               return;
             }
           } catch (error) {
-            console.warn("[AgriTradeApp] Could not repair profile coordinates:", error);
+            console.warn("[AgriLinkageApp] Could not repair profile coordinates:", error);
           }
         }
 

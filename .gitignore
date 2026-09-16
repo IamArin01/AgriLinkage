@@ -25,6 +25,8 @@ dist-ssr
 infos
 *.env.local
 .venvq
+.venv
+
 agmarknet_prices_unique_index.sql
 important-files-created-in-chat.txt
 plan_commodity_fix.txt
@@ -34,4 +36,8 @@ plan-series.txt
 supabase-public-read-pattern.txt
 process.txt
 OWelcomeAuth.jsx
+
 *.__pycache__
+.__pycache__
+__pycache__
+*.env
