@@ -7,6 +7,7 @@ TL;DR: Build the next phase around the existing screen structure and shared stat
    - Confirm how the role-based navigation in [src/AgriTradeApp.jsx](src/AgriTradeApp.jsx) drives farmer/buyer screens and identify any broken or unconnected state transitions.
    - Reuse [src/context/TradeContext.jsx](src/context/TradeContext.jsx) for shared lots/chats/role state and extend it with the missing transaction actions (confirm deal, mark paid, refresh state) instead of duplicating logic in components.
    - Validate the current mock data and data contracts in [src/data/mockData.js](src/data/mockData.js) against the screens that consume them.
+   - Add a geolocation capture step at the end of the welcome/auth flow in [WelcomeAuth.jsx](WelcomeAuth.jsx): trigger browser geolocation after the user picks role/phone/OTP/name, capture the farmer’s current location, and store city/district with latitude/longitude in the profile so the app can use that data for mandi and warehouse recommendations.
 
 2. Stabilize the real data layer
    - Keep Supabase-backed price fetching in [src/services/mandiService.js](src/services/mandiService.js) as the source of truth for market prices, but add explicit loading/error/fallback behavior to avoid blank states.

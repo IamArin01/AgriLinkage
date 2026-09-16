@@ -8,6 +8,7 @@ export default function HomeScreen({ role }) {
   const [commodityCatalog, setCommodityCatalog] = useState([]);
   const [commodities, setCommodities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [priceError, setPriceError] = useState("");
   const [selectedCommodityName, setSelectedCommodityName] = useState("");
   const [showAllCommodityPills, setShowAllCommodityPills] = useState(false);
 
@@ -29,11 +30,11 @@ export default function HomeScreen({ role }) {
             .filter(Boolean)
         )];
 
-        setCommodityCatalog(catalogNames);
-        setSelectedCommodityName((current) => current || catalogNames[0] || "");
-
         if (priceResult.error) {
           setCommodities([]);
+          setCommodityCatalog(catalogNames);
+          setSelectedCommodityName((current) => current || catalogNames[0] || "");
+          setPriceError(priceResult.error.message || "Could not load mandi prices.");
           setLoading(false);
           return;
         }
@@ -63,12 +64,19 @@ export default function HomeScreen({ role }) {
         });
 
         setCommodities(normalized);
+        setCommodityCatalog(catalogNames);
+        setSelectedCommodityName((current) => {
+          if (current) return current;
+          return normalized[0]?.Name || catalogNames[0] || "";
+        });
+        setPriceError(normalized.length ? "" : "No mandi price records are available yet.");
         setLoading(false);
       })
-      .catch(() => {
+      .catch((error) => {
         if (isMounted) {
           setCommodityCatalog([]);
           setCommodities([]);
+          setPriceError(error.message || "Could not load mandi prices.");
           setLoading(false);
         }
       });
@@ -240,6 +248,8 @@ export default function HomeScreen({ role }) {
           <div className="py-6 text-center text-gray-400 text-[12px] flex items-center justify-center gap-2">
             <Loader2 size={16} className="animate-spin text-[#1E4732]" /> Loading commodities…
           </div>
+        ) : priceError ? (
+          <p className="text-[12px] text-[#B23B3B] py-6 text-center">{priceError}</p>
         ) : filteredCommodities.length === 0 ? (
           <p className="text-[12px] text-gray-400 py-6 text-center">
             No commodities match your search.

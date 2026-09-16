@@ -4,8 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"npm run dev\" \"python prices_api.py\"",
+    "start": "concurrently \"npm run dev\" \"python prices_api.py\" \"python location_api.py\" \"python warehouse_api.py\"",
     "dev": "vite",
+    "location-api": "python location_api.py",
+    "warehouse-api": "python warehouse_api.py",
+    "mandi-coordinates": "python location_api.py --sync-mandi",
+    "mandi-coordinates:apply": "python location_api.py --sync-mandi --apply",
+    "warehouse-coordinates": "python location_api.py --sync-warehouses",
+    "warehouse-coordinates:apply": "python location_api.py --sync-warehouses --apply",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -15,10 +21,12 @@
     "@tailwindcss/vite": "^4.3.3",
     "dotenv": "^17.4.2",
     "firebase": "^12.18.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.42.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-is": "^19.2.8",
+    "react-leaflet": "^5.0.0",
     "recharts": "^3.10.1",
     "tailwindcss": "^4.3.3"
   },

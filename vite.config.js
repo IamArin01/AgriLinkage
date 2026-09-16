@@ -8,4 +8,10 @@ export default defineConfig({
     tailwindcss(),
     react(),
   ],
+  server: {
+    proxy: {
+      '/api/warehouses': 'http://127.0.0.1:5002',
+      '/api': 'http://127.0.0.1:5001',
+    },
+  },
 })

@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Sprout, ShoppingBasket, ArrowRight, ChevronLeft, Phone, RefreshCw } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Sprout, ShoppingBasket, ArrowRight, ChevronLeft, RefreshCw, MapPin } from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
 
 /* ----------------------------- design tokens ------------------------------
@@ -51,12 +51,19 @@ function OtpInput({ value, onChange, length = 6 }) {
 
 /* --------------------------------- Screen ---------------------------------- */
 export default function WelcomeAuth({ onAuthed }) {
-  const [step, setStep] = useState("role");      // role -> phone -> otp -> name
+  const [step, setStep] = useState("role");      // role -> phone -> otp -> name -> location
   const [role, setRole] = useState(null);         // "farmer" | "buyer"
   const [phone, setPhone] = useState("");         // digits only, no +91
   const [otp, setOtp] = useState("");
   const [name, setName] = useState("");
+  const [location, setLocation] = useState({
+    city: "",
+    district: "",
+    latitude: null,
+    longitude: null,
+  });
   const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [error, setError] = useState("");
   const [resendIn, setResendIn] = useState(0);
 
@@ -67,6 +74,61 @@ export default function WelcomeAuth({ onAuthed }) {
   }, [resendIn]);
 
   const e164 = "+91" + phone.replace(/\D/g, "");
+
+  const requestCurrentLocation = () => {
+    if (!navigator?.geolocation) {
+      setError("This browser does not support geolocation. You can still enter your city and district manually.");
+      return;
+    }
+
+    setError("");
+    setLocationLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        setLocation((prev) => ({
+          ...prev,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        }));
+        setLocationLoading(false);
+      },
+      (geoError) => {
+        setLocationLoading(false);
+        const msg = geoError.code === 1
+          ? "Location permission was denied. You can still enter your city and district manually."
+          : "We couldn't access your current location. You can still enter your city and district manually.";
+        setError(msg);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
+  };
+
+  const resolveManualLocation = async () => {
+    if (location.latitude !== null && location.longitude !== null) return location;
+
+    const place = [location.city.trim(), location.district.trim(), "Maharashtra"]
+      .filter(Boolean)
+      .join(", ");
+    const response = await fetch(`/api/geocode?place=${encodeURIComponent(place)}`);
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || "We could not find that location.");
+    }
+
+    return {
+      ...location,
+      city: result.city || location.city,
+      district: result.district || location.district,
+      latitude: result.latitude,
+      longitude: result.longitude,
+    };
+  };
 
   const sendOtp = async () => {
     setError("");
@@ -110,12 +172,32 @@ export default function WelcomeAuth({ onAuthed }) {
 
   const finishSignup = async () => {
     if (!name.trim()) return setError("Enter your name.");
+    if (!location.city.trim() && !location.district.trim() && location.latitude === null && location.longitude === null) {
+      return setError("Enter your city and district, or use your current location.");
+    }
+
     setError("");
     setLoading(true);
+    let resolvedLocation;
+    try {
+      resolvedLocation = await resolveManualLocation();
+    } catch (resolveError) {
+      setLoading(false);
+      return setError(resolveError.message);
+    }
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile, error } = await supabase
       .from("profiles")
-      .upsert({ id: user.id, name: name.trim(), phone: e164, role })
+      .upsert({
+        id: user.id,
+        name: name.trim(),
+        phone: e164,
+        role,
+        city: resolvedLocation.city.trim() || null,
+        district: resolvedLocation.district.trim() || null,
+        latitude: resolvedLocation.latitude,
+        longitude: resolvedLocation.longitude,
+      })
       .select()
       .single();
     setLoading(false);
@@ -133,7 +215,10 @@ export default function WelcomeAuth({ onAuthed }) {
           <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/5" />
           {step !== "role" && (
             <button
-              onClick={() => { setError(""); setStep(step === "otp" ? "phone" : step === "name" ? "otp" : "role"); }}
+              onClick={() => {
+                setError("");
+                setStep(step === "otp" ? "phone" : step === "location" ? "name" : step === "name" ? "otp" : "role");
+              }}
               className="absolute left-5 top-9 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"
             >
               <ChevronLeft size={18} color="#fff" />
@@ -259,8 +344,63 @@ export default function WelcomeAuth({ onAuthed }) {
                 className="w-full h-12 rounded-xl border border-[#E4E1D3] bg-white px-4 mb-4 text-[14px] text-[#1B2420] outline-none focus:border-[#1E4732]"
               />
               <button
-                onClick={finishSignup}
+                onClick={() => {
+                  if (!name.trim()) return setError("Enter your name.");
+                  setError("");
+                  setStep("location");
+                }}
                 disabled={loading}
+                className="w-full h-12 rounded-xl text-white font-semibold text-[15px] flex items-center justify-center gap-1.5 disabled:opacity-60"
+                style={{ backgroundColor: accent }}
+              >
+                Continue <ArrowRight size={16} color="#fff" />
+              </button>
+            </>
+          )}
+
+          {/* ------------------------- STEP 5: location ------------------------- */}
+          {step === "location" && (
+            <>
+              <p className="text-[13px] text-[#6B7268] mb-1 text-center">
+                Add your location
+              </p>
+              <p className="text-[11px] text-[#8B9086] mb-4 text-center">
+                We use this to suggest nearby mandis, warehouses, and schemes.
+              </p>
+
+              <button
+                onClick={requestCurrentLocation}
+                disabled={loading || locationLoading}
+                className="w-full h-12 rounded-xl border border-[#E4E1D3] bg-white text-[#1B2420] font-semibold text-[14px] flex items-center justify-center gap-2 disabled:opacity-60 mb-4"
+              >
+                <MapPin size={16} color={accent} />
+                {locationLoading ? "Getting location…" : "Use my current location"}
+              </button>
+
+              <div className="space-y-3 mb-4">
+                <input
+                  value={location.city}
+                  onChange={(e) => setLocation((prev) => ({ ...prev, city: e.target.value }))}
+                  placeholder="City"
+                  className="w-full h-12 rounded-xl border border-[#E4E1D3] bg-white px-4 text-[14px] text-[#1B2420] outline-none focus:border-[#1E4732]"
+                />
+                <input
+                  value={location.district}
+                  onChange={(e) => setLocation((prev) => ({ ...prev, district: e.target.value }))}
+                  placeholder="District"
+                  className="w-full h-12 rounded-xl border border-[#E4E1D3] bg-white px-4 text-[14px] text-[#1B2420] outline-none focus:border-[#1E4732]"
+                />
+              </div>
+
+              {location.latitude !== null && location.longitude !== null && (
+                <div className="rounded-xl border border-[#D9E8DF] bg-[#EEF4F1] px-3 py-2 mb-4 text-[11px] text-[#1B2420]">
+                  Current coordinates captured: <span className="font-semibold">{location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</span>
+                </div>
+              )}
+
+              <button
+                onClick={finishSignup}
+                disabled={loading || locationLoading}
                 className="w-full h-12 rounded-xl text-white font-semibold text-[15px] flex items-center justify-center gap-1.5 disabled:opacity-60"
                 style={{ backgroundColor: accent }}
               >

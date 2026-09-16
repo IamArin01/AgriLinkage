@@ -1,18 +1,19 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from "react-leaflet";
 import WelcomeAuth from "./WelcomeAuth";
 import { supabase } from "./lib/supabaseClient";
+import { getGovernmentSchemes, getMandiLocations, getNearbyMandis, getNearbyWarehouses, getWarehouses } from "./services/mandiService";
 import {
   Home, Sprout, ShoppingBasket, MessageCircle, CircleUser, Search,
-  ChevronLeft, Plus, TrendingUp, TrendingDown, MapPin, Phone, Star,
-  ShieldCheck, X, Check, Wallet, ArrowRight, ChevronRight, Clock,
-  Wifi, BatteryFull, SignalHigh, Delete, Landmark, Users,
-  FileWarning, Boxes, Receipt, IdCard
+  ChevronLeft, Plus, TrendingUp, MapPin, Phone, Star,
+  ShieldCheck, X, Check, Wallet, ChevronRight, Clock,
+  Delete, Landmark, Users, FileWarning, Boxes, Receipt, IdCard
 } from "lucide-react";
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
 } from "recharts";
-import { CROPS, THEME_COLORS, formatCurrency } from "./constants/theme.js";
-import { TradeProvider, useTrade } from "./context/TradeContext.jsx";
+import { CROPS, formatCurrency } from "./constants/theme.js";
+import { TradeProvider } from "./context/TradeContext.jsx";
 import HomeScreen from "./components/HomeScreen.jsx";
 
 /* ----------------------------- color palette bridge ----------------------------- */
@@ -30,16 +31,6 @@ const C = {
 const fmtRs = formatCurrency;
 
 /* ----------------------------- design tokens ----------------------------- */
-
-const TREND = {
-  arhar: [6710, 6740, 6690, 6760, 6790, 6775, 6820],
-  masoor: [5210, 5260, 5300, 5340, 5380, 5420, 5460],
-  chana: [5260, 5240, 5220, 5205, 5190, 5185, 5180],
-  urad: [7180, 7210, 7250, 7270, 7300, 7320, 7340],
-  moong: [7920, 7900, 7880, 7875, 7865, 7862, 7860],
-  kabuli: [6480, 6510, 6540, 6560, 6590, 6620, 6650],
-};
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Today"];
 
 const MANDI_TABLE = [
   { mandi: "Akola APMC", price: 5450, distance: "12 km", warehouse: "WDRA warehouse · 4 km" },
@@ -156,6 +147,68 @@ const TOOL_ITEMS = [
   },
 ];
 
+const VEHICLE_COSTS = {
+  "mini-truck": 32,
+  tractor: 22,
+  truck: 38,
+  tempo: 18,
+};
+
+const GOVT_SCHEMES = [
+  {
+    id: "scheme-1",
+    title: "PM-KISAN Support",
+    category: "Income Support",
+    crop: "All crops",
+    state: "Maharashtra",
+    district: "Akola",
+    description: "Direct support transfer for eligible farmer families with verified land records.",
+  },
+  {
+    id: "scheme-2",
+    title: "Maharashtra Crop Loan Relief",
+    category: "Credit",
+    crop: "Soybean",
+    state: "Maharashtra",
+    district: "Washim",
+    description: "Interest subsidy support for short-term crop loans during harvest and purchase cycles.",
+  },
+  {
+    id: "scheme-3",
+    title: "Warehouse Receipt Financing",
+    category: "Storage",
+    crop: "Wheat",
+    state: "Maharashtra",
+    district: "Amravati",
+    description: "Access financing against stored produce when WDRA warehouses are used for safe keeping.",
+  },
+  {
+    id: "scheme-4",
+    title: "Solar Pump Subsidy",
+    category: "Energy",
+    crop: "All crops",
+    state: "Maharashtra",
+    district: "Buldhana",
+    description: "Subsidy support for irrigation upgrades that improve farm resilience and water efficiency.",
+  },
+];
+
+const WDRA_WAREHOUSES = [
+  { id: "w1", name: "Akola Central Warehouse", district: "Akola", distance: 6.2, storageRate: 18, capacity: "1,250 t" },
+  { id: "w2", name: "Amravati Farmer Storage Hub", district: "Amravati", distance: 9.1, storageRate: 16, capacity: "980 t" },
+  { id: "w3", name: "Washim Grain Reserve", district: "Washim", distance: 13.8, storageRate: 21, capacity: "760 t" },
+];
+
+const SUPPLY_DEMAND_SERIES = [
+  { day: "Mon", arrivals: 440 },
+  { day: "Tue", arrivals: 510 },
+  { day: "Wed", arrivals: 390 },
+  { day: "Thu", arrivals: 580 },
+  { day: "Fri", arrivals: 640 },
+  { day: "Sat", arrivals: 470 },
+  { day: "Today", arrivals: 720 },
+];
+
 /* ------------------------------- primitives ------------------------------- */
 function TopBar({ title, onBack, right }) {
   return (
@@ -167,6 +220,57 @@ function TopBar({ title, onBack, right }) {
       ) : <div className="w-2" />}
       <h1 className="text-[19px] font-semibold text-[#1B2420] flex-1 truncate">{title}</h1>
       {right}
+    </div>
+  );
+}
+
+function MapOverviewMap({ profile, mandis, warehouses }) {
+  const hasFarmCoordinates = [profile?.latitude, profile?.longitude]
+    .every((value) => value != null && Number.isFinite(Number(value)));
+  const farmLocation = hasFarmCoordinates
+    ? [Number(profile.latitude), Number(profile.longitude)]
+    : null;
+
+  if (!farmLocation) {
+    return (
+      <div className="h-64 w-full rounded-2xl border border-[#E4E1D3] bg-[#EEF4F1] flex items-center justify-center px-6 text-center text-[12px] text-[#6B7268]">
+        Add or update your profile location to show the map from your farm.
+      </div>
+    );
+  }
+
+  const mandiMarkers = (mandis || []).filter((mandi) => Number.isFinite(Number(mandi.latitude)) && Number.isFinite(Number(mandi.longitude))).slice(0, 5);
+  const warehouseMarkers = (warehouses || []).filter((warehouse) => Number.isFinite(Number(warehouse.latitude)) && Number.isFinite(Number(warehouse.longitude))).slice(0, 5);
+
+  return (
+    <div className="h-64 w-full overflow-hidden rounded-2xl border border-[#E4E1D3] bg-[#EEF4F1]">
+      <MapContainer center={farmLocation} zoom={8} scrollWheelZoom={false} className="h-full w-full">
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        <Circle center={farmLocation} radius={2500} pathOptions={{ color: '#B65C38', fillColor: '#B65C38', fillOpacity: 0.2 }} />
+
+        {mandiMarkers.map((mandi) => (
+          <Marker key={mandi.id} position={[Number(mandi.latitude), Number(mandi.longitude)]}>
+            <Popup>{mandi.name}</Popup>
+          </Marker>
+        ))}
+
+        {warehouseMarkers.map((warehouse) => (
+          <Marker key={warehouse.id} position={[Number(warehouse.latitude), Number(warehouse.longitude)]}>
+            <Popup>{warehouse.name}</Popup>
+          </Marker>
+        ))}
+
+        {mandiMarkers.length > 0 && (
+          <Polyline
+            positions={[farmLocation, [Number(mandiMarkers[0].latitude), Number(mandiMarkers[0].longitude)]]}
+            pathOptions={{ color: '#2A6773', weight: 2, dashArray: '6 8' }}
+          />
+        )}
+      </MapContainer>
     </div>
   );
 }
@@ -261,7 +365,18 @@ function TradeListScreen({ role, lots, onOpenLot, onCreateLot }) {
   );
 }
 
-function CreateLotScreen({ onPublish, onBack }) {
+function Field({ label, children }) {
+  return (
+    <div className="mb-3">
+      <label className="text-[12px] font-semibold text-[#1B2420] mb-1 block">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const CREATE_LOT_INPUT_CLS = "w-full h-11 rounded-xl border border-[#E4E1D3] bg-white px-3 text-[14px] text-[#1B2420] outline-none focus:border-[#1E4732]";
+
+function CreateLotScreen({ onPublish }) {
   const [form, setForm] = useState({
     crop: "Masoor", qty: "", location: "Akola, MH", harvest: "", quality: "Mandi Assaying Verified",
     assayer: "", price: "", available: "",
@@ -269,46 +384,38 @@ function CreateLotScreen({ onPublish, onBack }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const canPublish = form.qty && form.price && form.harvest && form.available;
 
-  const Field = ({ label, children }) => (
-    <div className="mb-3">
-      <label className="text-[12px] font-semibold text-[#1B2420] mb-1 block">{label}</label>
-      {children}
-    </div>
-  );
-  const inputCls = "w-full h-11 rounded-xl border border-[#E4E1D3] bg-white px-3 text-[14px] text-[#1B2420] outline-none focus:border-[#1E4732]";
-
   return (
     <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6">
       <Field label="Crop">
-        <select className={inputCls} value={form.crop} onChange={set("crop")}>
+        <select className={CREATE_LOT_INPUT_CLS} value={form.crop} onChange={set("crop")}>
           {CROPS.map((c) => <option key={c.id}>{c.name}</option>)}
         </select>
       </Field>
       <Field label="Quantity (quintals)">
-        <input className={inputCls} type="number" placeholder="e.g. 100" value={form.qty} onChange={set("qty")} />
+        <input className={CREATE_LOT_INPUT_CLS} type="number" placeholder="e.g. 100" value={form.qty} onChange={set("qty")} />
       </Field>
       <Field label="Location">
-        <input className={inputCls} value={form.location} onChange={set("location")} />
+        <input className={CREATE_LOT_INPUT_CLS} value={form.location} onChange={set("location")} />
       </Field>
       <Field label="Harvest date">
-        <input className={inputCls} placeholder="e.g. 20 Aug" value={form.harvest} onChange={set("harvest")} />
+        <input className={CREATE_LOT_INPUT_CLS} placeholder="e.g. 20 Aug" value={form.harvest} onChange={set("harvest")} />
       </Field>
       <Field label="Quality">
-        <select className={inputCls} value={form.quality} onChange={set("quality")}>
+        <select className={CREATE_LOT_INPUT_CLS} value={form.quality} onChange={set("quality")}>
           <option>Mandi Assaying Verified</option>
           <option>Self declared</option>
         </select>
       </Field>
       {form.quality === "Mandi Assaying Verified" && (
         <Field label="Assaying name & contact">
-          <input className={inputCls} placeholder="e.g. AgriCert Labs · Akola" value={form.assayer} onChange={set("assayer")} />
+          <input className={CREATE_LOT_INPUT_CLS} placeholder="e.g. AgriCert Labs · Akola" value={form.assayer} onChange={set("assayer")} />
         </Field>
       )}
       <Field label="Expected price (₹ / quintal)">
-        <input className={inputCls} type="number" placeholder="e.g. 4500" value={form.price} onChange={set("price")} />
+        <input className={CREATE_LOT_INPUT_CLS} type="number" placeholder="e.g. 4500" value={form.price} onChange={set("price")} />
       </Field>
       <Field label="Available from">
-        <input className={inputCls} placeholder="e.g. 30 Aug" value={form.available} onChange={set("available")} />
+        <input className={CREATE_LOT_INPUT_CLS} placeholder="e.g. 30 Aug" value={form.available} onChange={set("available")} />
       </Field>
 
       <button
@@ -422,7 +529,7 @@ function PersonDetailScreen({ person, lotSummary, onContact }) {
 }
 
 /* ---------------------------------- Chat ----------------------------------- */
-function ChatListScreen({ role, chats, onOpen }) {
+function ChatListScreen({ chats, onOpen }) {
   return (
     <div className="flex-1 overflow-y-auto pb-6">
       <div className="px-4 pt-4 pb-2">
@@ -736,7 +843,7 @@ function ToolsScreen({ onOpenTool }) {
   );
 }
 
-function ToolDetailScreen({ tool, role }) {
+function ToolDetailScreen({ tool, role, profile }) {
   const detailMap = {
     "expense-calculator": {
       title: "Expense Calculator",
@@ -795,6 +902,447 @@ function ToolDetailScreen({ tool, role }) {
   };
 
   const detail = detailMap[tool?.key] || detailMap["expense-calculator"];
+  const Icon = tool?.icon || Search;
+
+  const [mandiData, setMandiData] = useState(MANDI_TABLE);
+  const [schemeData, setSchemeData] = useState(GOVT_SCHEMES);
+  const [warehouseData, setWarehouseData] = useState(WDRA_WAREHOUSES);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadToolData = async () => {
+      try {
+        const [mandiResult, schemeResult, warehouseResult] = await Promise.all([
+          getMandiLocations(),
+          getGovernmentSchemes(),
+          getWarehouses(),
+        ]);
+
+        if (!isMounted) return;
+
+        if (mandiResult.data?.length) {
+          setMandiData(mandiResult.data.map((mandi) => ({
+            id: mandi.id,
+            name: mandi.name,
+            mandi: mandi.name,
+            district: mandi.district,
+            location: mandi.location,
+            latitude: mandi.latitude,
+            longitude: mandi.longitude,
+            price: mandi.price ?? 0,
+            distance: mandi.distance ?? null,
+            warehouse: mandi.warehouse ?? mandi.location,
+          })));
+        } else {
+          setMandiData(MANDI_TABLE);
+        }
+
+        if (schemeResult.data?.length) {
+          setSchemeData(schemeResult.data);
+        } else {
+          setSchemeData(GOVT_SCHEMES);
+        }
+
+        if (warehouseResult.data?.length) {
+          setWarehouseData(warehouseResult.data.map((warehouse) => ({
+            id: warehouse.id,
+            name: warehouse.name,
+            district: warehouse.district,
+            address: warehouse.address,
+            status: warehouse.status,
+            capacity: warehouse.capacity,
+            contactNo: warehouse.contactNo,
+            storageRate: warehouse.storageRate ?? null,
+            latitude: warehouse.latitude,
+            longitude: warehouse.longitude,
+          })));
+        } else {
+          setWarehouseData(WDRA_WAREHOUSES);
+        }
+      } catch (error) {
+        console.error('[ToolDetailScreen] Failed to load tool data:', error);
+        if (isMounted) {
+          setMandiData(MANDI_TABLE);
+          setSchemeData(GOVT_SCHEMES);
+          setWarehouseData(WDRA_WAREHOUSES);
+        }
+      }
+    };
+
+    loadToolData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [tool?.key]);
+
+  const [expenseForm, setExpenseForm] = useState({
+    crop: "Masoor",
+    qty: 100,
+    price: 5450,
+    labour: 2500,
+    distance: 22,
+    vehicle: "tractor",
+    mandi: "Akola APMC",
+  });
+
+  const [selectedVehicle, setSelectedVehicle] = useState("tractor");
+  const [selectedSchemeFilter, setSelectedSchemeFilter] = useState("All");
+
+  const nearbyMandis = useMemo(
+    () => getNearbyMandis(mandiData, profile, 10),
+    [mandiData, profile],
+  );
+  const nearbyWarehouses = useMemo(
+    () => getNearbyWarehouses(warehouseData, profile, 10),
+    [warehouseData, profile],
+  );
+
+  const mandiComparisons = useMemo(() => nearbyMandis.map((mandi) => {
+    const rate = VEHICLE_COSTS[selectedVehicle] ?? VEHICLE_COSTS.tractor;
+    const fallbackDistance = Number.parseFloat(mandi.distance) || 0;
+    const distanceKm = mandi.distanceKm ?? fallbackDistance;
+    const travelCost = Math.round(distanceKm * rate * 0.85);
+    const estimatedProfit = Math.round((expenseForm.qty * expenseForm.price) - expenseForm.labour - travelCost);
+
+    return {
+      ...mandi,
+      distanceKm,
+      distanceLabel: distanceKm > 0 ? `${distanceKm.toFixed(1)} km` : (mandi.distance || "—"),
+      travelCost,
+      estimatedProfit,
+    };
+  }), [nearbyMandis, selectedVehicle, expenseForm]);
+
+  const vehicleOptions = Object.entries(VEHICLE_COSTS).map(([key, rate]) => ({
+    key,
+    label: key.replace("-", " ").replace(/\b\w/g, (char) => char.toUpperCase()),
+    rate,
+  }));
+
+  const selectedMandi = mandiComparisons.find((entry) => entry.mandi === expenseForm.mandi) || mandiComparisons[0];
+
+  const grossRevenue = Math.round((expenseForm.qty || 0) * (expenseForm.price || 0));
+  const transportCost = Math.round((expenseForm.distance || 0) * (VEHICLE_COSTS[expenseForm.vehicle] || 0));
+  const netProfit = Math.round(grossRevenue - (expenseForm.labour || 0) - transportCost);
+
+  const filteredSchemes = useMemo(() => {
+    if (selectedSchemeFilter === "All") return schemeData;
+    return schemeData.filter((scheme) => scheme.category === selectedSchemeFilter || scheme.crop === "All crops");
+  }, [schemeData, selectedSchemeFilter]);
+
+  const schemeFilters = ["All", ...new Set(schemeData.map((scheme) => scheme.category))];
+
+  const expenseFormChange = (field) => (event) => {
+    const value = field === "crop" || field === "vehicle" || field === "mandi"
+      ? event.target.value
+      : Number(event.target.value || 0);
+
+    setExpenseForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const renderExpenseCalculator = () => (
+    <div className="space-y-4">
+      <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="text-[12px] text-[#6B7268]">
+            Crop
+            <input value={expenseForm.crop} onChange={expenseFormChange("crop")} className="mt-1 w-full h-10 rounded-xl border border-[#E4E1D3] bg-[#F9F8F3] px-3 outline-none" />
+          </label>
+          <label className="text-[12px] text-[#6B7268]">
+            Quantity (q)
+            <input type="number" value={expenseForm.qty} onChange={expenseFormChange("qty")} className="mt-1 w-full h-10 rounded-xl border border-[#E4E1D3] bg-[#F9F8F3] px-3 outline-none" />
+          </label>
+          <label className="text-[12px] text-[#6B7268]">
+            Selling price (/q)
+            <input type="number" value={expenseForm.price} onChange={expenseFormChange("price")} className="mt-1 w-full h-10 rounded-xl border border-[#E4E1D3] bg-[#F9F8F3] px-3 outline-none" />
+          </label>
+          <label className="text-[12px] text-[#6B7268]">
+            Labour cost
+            <input type="number" value={expenseForm.labour} onChange={expenseFormChange("labour")} className="mt-1 w-full h-10 rounded-xl border border-[#E4E1D3] bg-[#F9F8F3] px-3 outline-none" />
+          </label>
+          <label className="text-[12px] text-[#6B7268]">
+            Distance (km)
+            <input type="number" value={expenseForm.distance} onChange={expenseFormChange("distance")} className="mt-1 w-full h-10 rounded-xl border border-[#E4E1D3] bg-[#F9F8F3] px-3 outline-none" />
+          </label>
+          <label className="text-[12px] text-[#6B7268]">
+            Vehicle
+            <select value={expenseForm.vehicle} onChange={expenseFormChange("vehicle")} className="mt-1 w-full h-10 rounded-xl border border-[#E4E1D3] bg-[#F9F8F3] px-3 outline-none">
+              {vehicleOptions.map((vehicle) => (
+                <option key={vehicle.key} value={vehicle.key}>{vehicle.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="bg-[#1B2420] rounded-2xl p-4 text-white">
+        <p className="text-[11px] uppercase tracking-wide text-white/60">Estimated net profit</p>
+        <div className="mt-2 flex items-end justify-between">
+          <span className="text-[28px] font-semibold">{fmtRs(netProfit)}</span>
+          <span className="text-[11px] text-[#8FE3AC]">Gross revenue {fmtRs(grossRevenue)}</span>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-[11px] text-white/70">
+          <div className="rounded-xl bg-white/5 p-2">
+            <p>Transport</p>
+            <p className="mt-1 text-white font-semibold">{fmtRs(transportCost)}</p>
+          </div>
+          <div className="rounded-xl bg-white/5 p-2">
+            <p>Labour</p>
+            <p className="mt-1 text-white font-semibold">{fmtRs(expenseForm.labour || 0)}</p>
+          </div>
+          <div className="rounded-xl bg-white/5 p-2">
+            <p>Per q</p>
+            <p className="mt-1 text-white font-semibold">{fmtRs(expenseForm.price || 0)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[14px] font-semibold text-[#1B2420]">Mandi comparison</p>
+          <select value={expenseForm.mandi} onChange={expenseFormChange("mandi")} className="text-[12px] border border-[#E4E1D3] rounded-xl bg-[#F9F8F3] px-2 py-1.5">
+            {nearbyMandis.map((mandi) => (
+              <option key={mandi.mandi || mandi.id} value={mandi.mandi}>{mandi.mandi}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          {mandiComparisons.map((mandi) => (
+            <div key={mandi.mandi || mandi.id} className={`rounded-xl border p-3 ${mandi.mandi === selectedMandi?.mandi ? "border-[#1E4732] bg-[#EEF4F1]" : "border-[#E4E1D3] bg-[#F5F6F0]"}`}>
+              <div className="flex justify-between gap-2">
+                <div>
+                  <p className="text-[13px] font-semibold text-[#1B2420]">{mandi.mandi}</p>
+                  <p className="text-[11px] text-[#6B7268]">{mandi.distanceLabel} away · {mandi.district || mandi.location || mandi.warehouse}</p>
+                </div>
+                <p className="text-[13px] font-semibold text-[#1E4732]">{fmtRs(mandi.estimatedProfit)}</p>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-[#6B7268]">
+                <span>{mandi.price ? `${fmtRs(mandi.price)}/q` : 'Price unavailable'}</span>
+                <span>Travel {fmtRs(mandi.travelCost)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMandiTravel = () => (
+    <div className="space-y-4">
+      <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[14px] font-semibold text-[#1B2420]">Transport options</p>
+          <span className="text-[11px] text-[#6B7268]">Origin: {profile?.city || profile?.district || 'Akola, MH'}</span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {vehicleOptions.map((vehicle) => (
+            <button
+              key={vehicle.key}
+              onClick={() => setSelectedVehicle(vehicle.key)}
+              className={`px-3 h-8 rounded-full text-[12px] font-semibold border ${selectedVehicle === vehicle.key ? "bg-[#1E4732] border-[#1E4732] text-white" : "bg-white border-[#E4E1D3] text-[#1B2420]"}`}
+            >
+              {vehicle.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+        <div className="space-y-2">
+          {nearbyMandis.map((mandi) => {
+            const fallbackDistance = Number.parseFloat(mandi.distance) || 0;
+            const distanceKm = mandi.distanceKm ?? fallbackDistance;
+            const travelCost = Math.round(distanceKm * (VEHICLE_COSTS[selectedVehicle] || 0));
+            return (
+              <div key={mandi.mandi || mandi.id} className="rounded-xl border border-[#E4E1D3] bg-[#F5F6F0] p-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-[13px] font-semibold text-[#1B2420]">{mandi.mandi}</p>
+                    <p className="text-[11px] text-[#6B7268]">{distanceKm > 0 ? `${distanceKm.toFixed(1)} km` : (mandi.distance || '—')} · {mandi.location || mandi.warehouse}</p>
+                  </div>
+                  <MapPin size={16} color={C.teal} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-[11px] text-[#6B7268]">
+                  <span>Vehicle: {selectedVehicle.replace("-", " ")}</span>
+                  <span>Travel {fmtRs(travelCost)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderGovtSchemes = () => (
+    <div className="space-y-4">
+      <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+        <p className="text-[14px] font-semibold text-[#1B2420]">Filter schemes</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {schemeFilters.map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setSelectedSchemeFilter(filter)}
+              className={`px-3 h-8 rounded-full text-[12px] font-semibold border ${selectedSchemeFilter === filter ? "bg-[#1E4732] border-[#1E4732] text-white" : "bg-white border-[#E4E1D3] text-[#1B2420]"}`}
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {filteredSchemes.map((scheme) => (
+          <div key={scheme.id} className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[14px] font-semibold text-[#1B2420]">{scheme.title}</p>
+                <p className="mt-1 text-[11px] text-[#6B7268]">{scheme.category} · {scheme.district}, {scheme.state}</p>
+              </div>
+              <Pill tone="teal">{scheme.crop || 'All crops'}</Pill>
+            </div>
+            <div className="mt-3 space-y-2 text-[12px] text-[#6B7268]">
+              {scheme.eligibilityCriteria && (
+                <p><span className="font-semibold text-[#1B2420]">Eligibility:</span> {scheme.eligibilityCriteria}</p>
+              )}
+              {scheme.primaryBenefit && (
+                <p><span className="font-semibold text-[#1B2420]">Benefit:</span> {scheme.primaryBenefit}</p>
+              )}
+              {scheme.subsidySlabs && (
+                <p><span className="font-semibold text-[#1B2420]">Subsidy:</span> {scheme.subsidySlabs}</p>
+              )}
+              {!scheme.eligibilityCriteria && !scheme.primaryBenefit && !scheme.subsidySlabs && (
+                <p>{scheme.description}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderWdraWarehouse = () => (
+    <div className="space-y-3">
+      {nearbyWarehouses.map((warehouse) => (
+        <div key={warehouse.id} className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[14px] font-semibold text-[#1B2420]">{warehouse.name}</p>
+              <p className="text-[11px] text-[#6B7268]">{warehouse.district} · {warehouse.capacity}</p>
+            </div>
+            {warehouse.distanceKm != null ? <Pill tone="up">{warehouse.distanceKm.toFixed(1)} km</Pill> : null}
+          </div>
+          {warehouse.address && (
+            <p className="mt-2 text-[11px] text-[#6B7268]">{warehouse.address}</p>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-[#6B7268]">
+            <div className="rounded-xl bg-[#F5F6F0] p-2">
+              <p>Status</p>
+              <p className="mt-1 font-semibold text-[#1B2420]">{warehouse.status || 'Active'}</p>
+            </div>
+            <div className="rounded-xl bg-[#F5F6F0] p-2">
+              <p>Contact</p>
+              <p className="mt-1 font-semibold text-[#1B2420]">{warehouse.contactNo || '—'}</p>
+            </div>
+            {warehouse.storageRate ? (
+              <div className="rounded-xl bg-[#F5F6F0] p-2">
+                <p>Storage rate</p>
+                <p className="mt-1 font-semibold text-[#1B2420]">{fmtRs(warehouse.storageRate)}/q</p>
+              </div>
+            ) : null}
+            {warehouse.whmName ? (
+              <div className="rounded-xl bg-[#F5F6F0] p-2">
+                <p>WHM</p>
+                <p className="mt-1 font-semibold text-[#1B2420]">{warehouse.whmName}</p>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderSupplyDemand = () => (
+    <div className="space-y-4">
+      <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+        <p className="text-[14px] font-semibold text-[#1B2420]">Masoor arrivals (last 7 days)</p>
+        <div className="mt-3 h-44">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={SUPPLY_DEMAND_SERIES}>
+              <defs>
+                <linearGradient id="supplyFill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="5%" stopColor="#2A6773" stopOpacity={0.45} />
+                  <stop offset="95%" stopColor="#2A6773" stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6B7268' }} />
+              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6B7268' }} />
+              <Tooltip />
+              <Area type="monotone" dataKey="arrivals" stroke="#2A6773" fill="url(#supplyFill)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
+          <p className="text-[11px] text-[#6B7268]">Avg/day</p>
+          <p className="mt-1 text-[16px] font-semibold text-[#1B2420]">533</p>
+        </div>
+        <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
+          <p className="text-[11px] text-[#6B7268]">Peak</p>
+          <p className="mt-1 text-[16px] font-semibold text-[#1E4732]">720</p>
+        </div>
+        <div className="rounded-2xl bg-white border border-[#E4E1D3] p-3">
+          <p className="text-[11px] text-[#6B7268]">Trend</p>
+          <p className="mt-1 text-[16px] font-semibold text-[#B23B3B]">+18%</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMapOverview = () => {
+    const nearestMandi = nearbyMandis[0];
+    const nearestWarehouse = nearbyWarehouses[0];
+
+    return (
+      <div className="space-y-4">
+        <div className="bg-white border border-[#E4E1D3] rounded-2xl p-4">
+          <MapOverviewMap profile={profile} mandis={nearbyMandis} warehouses={nearbyWarehouses} />
+        </div>
+
+        <div className="space-y-2">
+          {[
+            { label: "Farm", value: `${profile?.city || profile?.district || 'Location not set'}, Maharashtra`, color: "bg-[#B65C38]" },
+            { label: "Nearest mandi", value: `${nearestMandi?.mandi || 'No mandi found'}${nearestMandi?.distanceLabel ? ` · ${nearestMandi.distanceLabel}` : ''}`, color: "bg-[#2A6773]" },
+            { label: "Buyer hub", value: "Amravati · 34 km", color: "bg-[#1E4732]" },
+            { label: "Warehouse", value: `${nearestWarehouse?.name || 'No warehouse found'}${nearestWarehouse?.distanceKm != null ? ` · ${nearestWarehouse.distanceKm.toFixed(1)} km` : ''}`, color: "bg-[#D98A2B]" },
+          ].map((item) => (
+            <div key={item.label} className="flex items-center justify-between bg-white border border-[#E4E1D3] rounded-2xl px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
+                <span className="text-[12px] text-[#1B2420]">{item.label}</span>
+              </div>
+              <span className="text-[12px] text-[#6B7268]">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const contentByTool = {
+    "expense-calculator": renderExpenseCalculator(),
+    "mandi-travel": renderMandiTravel(),
+    "govt-schemes": renderGovtSchemes(),
+    "wdra-warehouse": renderWdraWarehouse(),
+    "supply-demand": renderSupplyDemand(),
+    "map-overview": renderMapOverview(),
+  };
 
   return (
     <div className="flex-1 overflow-y-auto pb-6">
@@ -806,7 +1354,7 @@ function ToolDetailScreen({ tool, role }) {
               <p className="mt-1 text-[22px] font-semibold text-[#1B2420]">{detail.title}</p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-[#E4ECE4] flex items-center justify-center">
-              {tool?.icon ? <tool.icon size={22} color={C.teal} /> : <Search size={22} color={C.teal} />}
+              <Icon size={22} color={C.teal} />
             </div>
           </div>
 
@@ -821,6 +1369,10 @@ function ToolDetailScreen({ tool, role }) {
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="px-4 pt-4">
+        {contentByTool[tool?.key] || contentByTool["expense-calculator"]}
       </div>
     </div>
   );
@@ -1024,7 +1576,7 @@ function MainApp({ profile, onSignOut, onProfileUpdate }) {
         return <ToolsScreen onOpenTool={(tool) => pushScreen("tools", { name: "tool_detail", tool })} />;
       }
       if (currentScreen.name === "tool_detail") {
-        return <ToolDetailScreen tool={currentScreen.tool} role={role} />;
+        return <ToolDetailScreen tool={currentScreen.tool} role={role} profile={profile} />;
       }
     }
 
@@ -1108,6 +1660,31 @@ export default function AgriTradeApp() {
         .eq("id", userId)
         .maybeSingle();
       if (existingProfile) {
+        const hasCoordinates = [existingProfile.latitude, existingProfile.longitude]
+          .every((value) => value !== null && value !== "" && Number.isFinite(Number(value)));
+
+        if (!hasCoordinates && (existingProfile.city || existingProfile.district)) {
+          try {
+            const place = [existingProfile.city, existingProfile.district, "Maharashtra"]
+              .filter(Boolean)
+              .join(", ");
+            const response = await fetch(`/api/geocode?place=${encodeURIComponent(place)}`);
+            const location = await response.json();
+            if (response.ok && location.latitude != null && location.longitude != null) {
+              const { data: updatedProfile } = await supabase
+                .from("profiles")
+                .update({ latitude: location.latitude, longitude: location.longitude })
+                .eq("id", userId)
+                .select()
+                .single();
+              setProfile(updatedProfile || { ...existingProfile, ...location });
+              return;
+            }
+          } catch (error) {
+            console.warn("[AgriTradeApp] Could not repair profile coordinates:", error);
+          }
+        }
+
         setProfile(existingProfile);
       }
     });

@@ -13,14 +13,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 // ── 1. Environment variables ──────────────────────────────────────────────────
-// Vite: import.meta.env.VITE_*  |  Next.js: process.env.NEXT_PUBLIC_*
-const supabaseUrl =
-  import.meta.env?.VITE_PUBLIC_SUPABASE_URL ??
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_URL);
-
-const supabaseAnonKey =
-  import.meta.env?.VITE_PUBLIC_SUPABASE_ANON_KEY ??
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+// Vite: import.meta.env.VITE_*
+const supabaseUrl = import.meta.env?.VITE_PUBLIC_SUPABASE_URL ?? '';
+const supabaseAnonKey = import.meta.env?.VITE_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(

@@ -25,3 +25,12 @@ dist-ssr
 infos
 *.env.local
 .venvq
+agmarknet_prices_unique_index.sql
+important-files-created-in-chat.txt
+plan_commodity_fix.txt
+plan-agriTrade.prompt.md 
+plan-new.txt
+plan-series.txt
+supabase-public-read-pattern.txt
+process.txt
+

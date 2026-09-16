@@ -24,4 +24,20 @@ im using supabase and twilio(which i think im not using it here for auth rn) and
 so how will we store the location, and use it to fetch the distance for all the other buyers by entering that data to the maps api for individual fetching or knowing the distance from his farm and location
 
 
+5. welcoming user on homescreen
+
+- Add a welcome/intro block on the Home screen for the logged-in user.
+- Show a short greeting, current user role, and quick actions such as Create Lot, View Mandis, and Open Tools.
+- Keep the Home screen clean and not overloaded; the welcome section should be small and card-based to match the app theme.
+- For pricing, you do not need a separate table for every commodity in the database if you already have the mandi arrival/pricing dataset available.
+- In the first version, use the existing mandi data as the source of truth for commodity prices and display that in the Home screen as a searchable commodity table or quick market summary.
+- If you later want more advanced funding, analytics, or market forecasting, you can add a dedicated commodity_prices table with fields like commodity, state, district, mandi, date, min_price, modal_price, max_price, and source.
+- So the simple answer is: yes, a commodity prices table is useful eventually, but for the current app structure it is optional if you can already query the mandi price data directly from Supabase.
+
+Suggested architecture for location + distance
+- Store the user location in the profiles table (or a dedicated user_locations table) with city, district, latitude, longitude, and maybe a place_name field.
+- For buyer/farmer distance comparisons, store each buyer or farm location once, then query the maps API only when needed for the selected route.
+- For the app’s first version, do not call the maps API for every buyer on every screen load. Instead, calculate or fetch distances only for the visible items or when a user opens a detail view.
+- Keep a lightweight cache in the frontend or Supabase for repeated place lookups so you do not overuse the maps API.
+
 

@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
-import { Sprout, ShoppingBasket, ArrowRight, ChevronLeft, Phone, RefreshCw } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Sprout, ShoppingBasket, ArrowRight, ChevronLeft, RefreshCw } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 /* ----------------------------- design tokens ------------------------------
