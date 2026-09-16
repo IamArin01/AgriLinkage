@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"npm run dev\" \"python prices_api.py\" \"python location_api.py\" \"python warehouse_api.py\"",
+    "start": "concurrently \"npm run dev\" \"python prices_api.py\" \"python arrival_api.py\" \"python location_api.py\" \"python warehouse_api.py\" \"python files/app.py\"",
     "dev": "vite",
+    "ml-api": "python files/app.py",
+    "train-ml-model": "python files/train_model.py",
+    "arrival-api": "python arrival_api.py",
     "location-api": "python location_api.py",
     "warehouse-api": "python warehouse_api.py",
     "mandi-coordinates": "python location_api.py --sync-mandi",

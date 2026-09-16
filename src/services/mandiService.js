@@ -301,51 +301,76 @@ export async function getCropPriceTrend(commodityName = '') {
   }
 }
 
+function pickFirstDefined(row, keys) {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeArrivalDateValue(row) {
+  const value = pickFirstDefined(row, ['arrival_date', 'arrival date', 'Arrival_Date', 'Arrival Date']);
+  if (value === undefined || value === null || value === '') return null;
+
+  const dateString = String(value).trim();
+  const parsed = new Date(dateString);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
+function normalizeArrivalQuantityValue(row) {
+  const rawValue = pickFirstDefined(row, ['arrival_quantity', 'arrival quantity', 'Arrival_Quantity', 'Arrival Quantity', 'arrival_qty', 'arrivalQty']);
+  if (rawValue === undefined || rawValue === null || rawValue === '') return 0;
+
+  const compactValue = String(rawValue).replace(/,/g, '').trim();
+  const parsed = Number(compactValue);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeCommodityName(value) {
+  return String(value ?? '').trim();
+}
+
 export async function getCommodityArrivalSeries(commodityName = '', limit = 7) {
   const normalizedCommodity = String(commodityName || '').trim();
 
   try {
-    let query = supabase
-      .from('agmarknet_prices')
-      .select('commodity, arrival_date, modal_price, min_price, max_price, market')
-      .not('arrival_date', 'is', null)
-      .order('arrival_date', { ascending: false })
-      .limit(200);
-
-    if (normalizedCommodity) {
-      query = query.ilike('commodity', `%${normalizedCommodity}%`);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await supabase
+      .from('agmarknet_arrival')
+      .select('*');
 
     if (error) {
       console.error('[getCommodityArrivalSeries] Error:', error);
       return { data: [], error };
     }
 
+    const rows = (data || []).filter((row) => {
+      if (!normalizedCommodity) return true;
+      const commodityValue = normalizeCommodityName(pickFirstDefined(row, ['commodity', 'Commodity']));
+      return commodityValue.toLowerCase().includes(normalizedCommodity.toLowerCase());
+    });
+
     const grouped = new Map();
 
-    (data || []).forEach((row) => {
-      const dateKey = row.arrival_date;
-      if (!dateKey) return;
+    rows.forEach((row) => {
+      const dateKey = normalizeArrivalDateValue(row);
+      const commodityValue = normalizeCommodityName(pickFirstDefined(row, ['commodity', 'Commodity']));
+      if (!dateKey || !commodityValue) return;
 
       const parsedDate = new Date(dateKey);
-      if (Number.isNaN(parsedDate.getTime())) return;
-
       const dayKey = parsedDate.toISOString().slice(0, 10);
       const existing = grouped.get(dayKey) || {
         date: dayKey,
         label: parsedDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
         arrivals: 0,
-        modalTotal: 0,
+        totalArrivalQty: 0,
       };
 
-      const modalPrice = Number(row.modal_price ?? row.Modal_Price ?? 0);
+      const arrivalQty = normalizeArrivalQuantityValue(row);
       existing.arrivals += 1;
-      if (Number.isFinite(modalPrice) && modalPrice > 0) {
-        existing.modalTotal += modalPrice;
-      }
-
+      existing.totalArrivalQty += arrivalQty;
       grouped.set(dayKey, existing);
     });
 
@@ -354,13 +379,37 @@ export async function getCommodityArrivalSeries(commodityName = '', limit = 7) {
       .slice(-Math.max(1, Number(limit) || 7))
       .map((entry) => ({
         day: entry.label,
-        arrivals: entry.arrivals,
-        avgModalPrice: entry.arrivals ? Math.round(entry.modalTotal / entry.arrivals) : 0,
+        arrivals: Number(entry.totalArrivalQty || 0),
+        avgModalPrice: 0,
       }));
 
     return { data: series, error: null };
   } catch (err) {
     console.error('[getCommodityArrivalSeries] Exception:', err);
+    return { data: [], error: err };
+  }
+}
+
+export async function getArrivalCommodities() {
+  try {
+    const { data, error } = await supabase
+      .from('agmarknet_arrival')
+      .select('*');
+
+    if (error) {
+      console.error('[getArrivalCommodities] Supabase Error:', error);
+      return { data: [], error };
+    }
+
+    const values = [...new Set(
+      (data || [])
+        .map((row) => normalizeCommodityName(pickFirstDefined(row, ['commodity', 'Commodity'])))
+        .filter(Boolean),
+    )].sort((first, second) => first.localeCompare(second));
+
+    return { data: values, error: null };
+  } catch (err) {
+    console.error('[getArrivalCommodities] Exception:', err);
     return { data: [], error: err };
   }
 }

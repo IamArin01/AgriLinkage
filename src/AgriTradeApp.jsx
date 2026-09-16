@@ -1,8 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from "react-leaflet";
 import WelcomeAuth from "./WelcomeAuth";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { supabase } from "./lib/supabaseClient";
 import {
+  getArrivalCommodities,
   getCommodityArrivalSeries,
   getCommodities,
   getGovernmentSchemes,
@@ -40,11 +45,47 @@ const fmtRs = formatCurrency;
 
 /* ----------------------------- design tokens ----------------------------- */
 
+const defaultIcon = L.icon({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  tooltipAnchor: [16, -28],
+  shadowSize: [41, 41],
+});
+
+L.Marker.prototype.options.icon = defaultIcon;
+
 const MANDI_TABLE = [
   { mandi: "Akola APMC", price: 5450, distance: "12 km", warehouse: "WDRA warehouse · 4 km" },
   { mandi: "Amravati Krishi Mandi", price: 5510, distance: "34 km", warehouse: "WDRA warehouse · 9 km" },
   { mandi: "Washim Mandi Samiti", price: 5380, distance: "48 km", warehouse: "No WDRA warehouse nearby" },
 ];
+
+const QUALITY_RANK = { A: 4, B: 3, C: 2, D: 1 };
+
+const getGradeScore = (grade) => {
+  const normalized = String(grade || "").trim().toUpperCase();
+  return QUALITY_RANK[normalized] || 1;
+};
+
+const getBuyerMatchScore = (buyer = {}, lot = {}) => {
+  const offer = Number(buyer.offer ?? buyer.amount ?? 0);
+  const qty = Number(buyer.qty ?? 0);
+  const gradeScore = getGradeScore(buyer.grade);
+  const lotQualityBoost = lot.quality?.includes("Verified") ? 180 : 80;
+  const locationBoost = String(buyer.location || "").toLowerCase().includes("akola") ? 60 : 0;
+  return (offer * 0.8) + (qty * 3) + (gradeScore * 180) + lotQualityBoost + locationBoost;
+};
+
+const getLotRankingScore = (lot = {}) => {
+  const basePrice = Number(lot.price ?? 0);
+  const lotQualityBoost = lot.quality?.includes("Verified") ? 220 : 100;
+  const buyerInterestBoost = (lot.interested || []).reduce((sum, buyer) => sum + getBuyerMatchScore(buyer, lot), 0);
+  return basePrice + lotQualityBoost + buyerInterestBoost;
+};
 
 const INITIAL_LOTS = [
   {
@@ -52,8 +93,8 @@ const INITIAL_LOTS = [
     harvest: "20 Aug", quality: "Mandi Assaying Verified", assayer: "AgriCert Labs · Akola",
     price: 4500, available: "30 Aug", farmerName: "You", mine: true,
     interested: [
-      { name: "Buyer 1", qty: 20, grade: "B", location: "Akola" },
-      { name: "Buyer 2", qty: 40, grade: "A", location: "Amravati" },
+      { name: "Buyer 1", qty: 20, grade: "B", location: "Akola", offer: 4450 },
+      { name: "Buyer 2", qty: 40, grade: "A", location: "Amravati", offer: 4720 },
     ],
   },
   {
@@ -65,7 +106,7 @@ const INITIAL_LOTS = [
     id: "lot-3", crop: "Masoor", qty: 150, unit: "quintals", location: "Buldhana, MH",
     harvest: "18 Aug", quality: "Mandi Assaying Verified", assayer: "Krishi Labs · Buldhana",
     price: 4550, available: "28 Aug", farmerName: "Farmer 1", mine: false,
-    interested: [{ name: "Buyer A", qty: 50, grade: "A", location: "Akola" }],
+    interested: [{ name: "Buyer A", qty: 50, grade: "A", location: "Akola", offer: 4620 }],
   },
   {
     id: "lot-4", crop: "Chana", qty: 80, unit: "quintals", location: "Akola, MH",
@@ -261,13 +302,13 @@ function MapOverviewMap({ profile, mandis, warehouses }) {
         <Circle center={farmLocation} radius={2500} pathOptions={{ color: '#B65C38', fillColor: '#B65C38', fillOpacity: 0.2 }} />
 
         {mandiMarkers.map((mandi) => (
-          <Marker key={mandi.id} position={[Number(mandi.latitude), Number(mandi.longitude)]}>
+          <Marker key={mandi.id} position={[Number(mandi.latitude), Number(mandi.longitude)]} icon={defaultIcon}>
             <Popup>{mandi.name}</Popup>
           </Marker>
         ))}
 
         {warehouseMarkers.map((warehouse) => (
-          <Marker key={warehouse.id} position={[Number(warehouse.latitude), Number(warehouse.longitude)]}>
+          <Marker key={warehouse.id} position={[Number(warehouse.latitude), Number(warehouse.longitude)]} icon={defaultIcon}>
             <Popup>{warehouse.name}</Popup>
           </Marker>
         ))}
@@ -333,7 +374,8 @@ function LotCard({ lot, role, onOpen }) {
 function TradeListScreen({ role, lots, onOpenLot, onCreateLot }) {
   const [cropFilter, setCropFilter] = useState("all");
   const visible = role === "farmer" ? lots.filter((l) => l.mine) : lots;
-  const filtered = cropFilter === "all" ? visible : visible.filter((l) => l.crop.toLowerCase() === cropFilter);
+  const sortedVisible = [...visible].sort((first, second) => getLotRankingScore(second) - getLotRankingScore(first));
+  const filtered = (cropFilter === "all" ? sortedVisible : sortedVisible.filter((l) => l.crop.toLowerCase() === cropFilter));
 
   return (
     <div className="flex-1 overflow-y-auto pb-6">
@@ -443,6 +485,8 @@ function CreateLotScreen({ onPublish }) {
 }
 
 function LotDetailScreen({ lot, role, onOpenPerson }) {
+  const rankedInterested = [...(lot.interested || [])].sort((first, second) => getBuyerMatchScore(second, lot) - getBuyerMatchScore(first, lot));
+
   return (
     <div className="flex-1 overflow-y-auto pb-6">
       <div className="px-4 pt-4 bg-white border border-[#E4E1D3] rounded-2xl p-4">
@@ -473,19 +517,23 @@ function LotDetailScreen({ lot, role, onOpenPerson }) {
           {role === "farmer" ? `Interested buyers (${lot.interested.length})` : `Other buyers on this lot (${lot.interested.length})`}
         </p>
         <div className="flex flex-col gap-2">
-          {lot.interested.length === 0 && (
+          {rankedInterested.length === 0 && (
             <div className="bg-white border border-dashed border-[#E4E1D3] rounded-2xl p-5 text-center">
               <p className="text-[12px] text-[#6B7268]">No offers yet — check back soon.</p>
             </div>
           )}
-          {lot.interested.map((p, i) => (
-            <button key={i} onClick={() => onOpenPerson(p)} className="w-full text-left bg-white border border-[#E4E1D3] rounded-2xl p-3 flex items-center gap-3 active:scale-[0.99] transition-transform">
+          {rankedInterested.map((p, i) => (
+            <button key={`${p.name}-${i}`} onClick={() => onOpenPerson(p)} className="w-full text-left bg-white border border-[#E4E1D3] rounded-2xl p-3 flex items-center gap-3 active:scale-[0.99] transition-transform">
               <div className="w-10 h-10 rounded-full bg-[#DFEBEC] flex items-center justify-center shrink-0">
                 <CircleUser size={22} color={C.teal} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-[#1B2420]">{p.name}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[13px] font-semibold text-[#1B2420]">{p.name}</p>
+                  {i === 0 && <Pill tone="up">Best match</Pill>}
+                </div>
                 <p className="text-[11px] text-[#6B7268]">{p.qty} quintals · Grade {p.grade}{p.location ? ` · ${p.location}` : ""}</p>
+                {p.offer && <p className="text-[11px] font-semibold text-[#1E4732] mt-1">Offer {fmtRs(p.offer)}/q</p>}
               </div>
               <ChevronRight size={16} color={C.sub} />
             </button>
@@ -998,6 +1046,7 @@ function ToolDetailScreen({ tool, role, profile }) {
   const [supplyCommodityOptions, setSupplyCommodityOptions] = useState(["Masoor", "Chana", "Soybean", "Wheat"]);
   const [supplyCommodity, setSupplyCommodity] = useState("Masoor");
   const [supplySeries, setSupplySeries] = useState([]);
+  const [marketPrediction, setMarketPrediction] = useState(null);
 
   useEffect(() => {
     if (tool?.key !== "supply-demand") return;
@@ -1006,16 +1055,23 @@ function ToolDetailScreen({ tool, role, profile }) {
 
     const loadSupplyData = async () => {
       try {
-        const { data = [] } = await getCommodities();
-        const availableNames = [...new Set(
-          (data || [])
+        const [commoditiesResult, arrivalCommodityResult] = await Promise.all([
+          getCommodities(),
+          getArrivalCommodities(),
+        ]);
+
+        const priceData = commoditiesResult.data || [];
+        const arrivalCommodityData = arrivalCommodityResult.data || [];
+        const availableNames = [...new Set([
+          ...arrivalCommodityData,
+          ...(priceData || [])
             .map((item) => (item.commodity || item.Commodity || item.Name || item.name || "").trim())
             .filter(Boolean),
-        )];
+        ])];
 
         if (!isMounted) return;
 
-        const nextOptions = availableNames.length ? availableNames.slice(0, 12) : ["Masoor", "Chana", "Soybean", "Wheat"];
+        const nextOptions = availableNames.length ? availableNames.slice(0, 20) : ["Masoor", "Chana", "Soybean", "Wheat"];
         setSupplyCommodityOptions((currentOptions) => {
           if (currentOptions.length !== nextOptions.length || currentOptions.some((value, index) => value !== nextOptions[index])) {
             return nextOptions;
@@ -1033,10 +1089,32 @@ function ToolDetailScreen({ tool, role, profile }) {
 
         const { data: trendData = [] } = await getCommodityArrivalSeries(targetCommodity, 7);
         if (isMounted) setSupplySeries(trendData);
+
+        const latestArrival = Number(trendData[trendData.length - 1]?.arrivals || 0);
+        const latestPrice = Number((priceData || []).find((item) => (item.commodity || item.Commodity || item.Name || item.name || "").toLowerCase() === targetCommodity.toLowerCase())?.modal_price ?? priceData[0]?.modal_price ?? 5200);
+
+        const predictionResponse = await fetch("http://localhost:5000/api/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            modal_price: latestPrice || 5200,
+            arrival_qty: latestArrival || 250,
+          }),
+        });
+
+        if (!isMounted) return;
+
+        if (!predictionResponse.ok) {
+          throw new Error("ML model request failed");
+        }
+
+        const prediction = await predictionResponse.json();
+        setMarketPrediction(prediction);
       } catch (error) {
         console.error('[ToolDetailScreen] Failed to load supply trend:', error);
         if (isMounted) {
           setSupplySeries(SUPPLY_DEMAND_SERIES);
+          setMarketPrediction(null);
         }
       }
     };
@@ -1331,6 +1409,9 @@ function ToolDetailScreen({ tool, role, profile }) {
     const firstValue = Number(chartData[0]?.arrivals || 0);
     const lastValue = Number(chartData[chartData.length - 1]?.arrivals || 0);
     const trendPercent = firstValue ? Math.round(((lastValue - firstValue) / firstValue) * 100) : 0;
+    const priceRange = marketPrediction ? `₹${Math.round(marketPrediction.predicted_low)} - ₹${Math.round(marketPrediction.predicted_high)}` : 'Awaiting forecast';
+    const bestEstimate = marketPrediction ? `₹${Math.round(marketPrediction.predicted_price)}` : '—';
+    const marketTone = marketPrediction ? (marketPrediction.predicted_price >= (Number(chartData[chartData.length - 1]?.avgModalPrice || 0) || 5200) ? 'Bullish' : 'Cautious') : 'Monitoring';
 
     return (
       <div className="space-y-4">
@@ -1378,6 +1459,15 @@ function ToolDetailScreen({ tool, role, profile }) {
             <p className="text-[11px] text-[#6B7268]">Trend</p>
             <p className={`mt-1 text-[16px] font-semibold ${trendPercent >= 0 ? '#1E4732' : '#B23B3B'}`}>{trendPercent >= 0 ? '+' : ''}{trendPercent}%</p>
           </div>
+        </div>
+
+        <div className="bg-[#1B2420] rounded-2xl p-4 text-white">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] uppercase tracking-wide text-white/60">Market intelligence</p>
+            <span className="text-[11px] rounded-full bg-white/10 px-2 py-1 text-white/80">{marketTone}</span>
+          </div>
+          <p className="mt-3 text-[18px] font-semibold">{bestEstimate}</p>
+          <p className="mt-1 text-[12px] text-white/70">Predicted 7-day range: {priceRange}</p>
         </div>
       </div>
     );
