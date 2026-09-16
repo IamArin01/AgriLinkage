@@ -1669,6 +1669,12 @@ function MainApp({ profile, onSignOut, onProfileUpdate }) {
       return (
         <HomeScreen
           role={role}
+          onOpenTrade={() => {
+            setActiveTab("trade");
+            if (role === "farmer") {
+              pushScreen("trade", { name: "create_lot" });
+            }
+          }}
           onSwitchRole={() => setRole((r) => (r === "farmer" ? "buyer" : "farmer"))}
         />
       );
@@ -1708,6 +1714,15 @@ function MainApp({ profile, onSignOut, onProfileUpdate }) {
             person={currentScreen.person}
             lotSummary={`${currentScreen.lot.crop} · ${currentScreen.lot.qty} quintals`}
             onContact={() => {
+              const convo = (chats[role] || []).find(
+                (candidate) => candidate.person?.name === currentScreen.person?.name
+              );
+              if (convo) {
+                setStacks((previous) => ({
+                  ...previous,
+                  chat: [{ name: "list" }, { name: "detail", convo }],
+                }));
+              }
               setActiveTab("chat");
             }}
           />

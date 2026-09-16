@@ -3,7 +3,7 @@ import { Search, TrendingUp, ArrowRight, Loader2, Layers, X } from "lucide-react
 import { THEME_COLORS, formatCurrency } from "../constants/theme";
 import { getCommodityCatalog, getCommodities } from "../services/mandiService.js";
 
-export default function HomeScreen({ role }) {
+export default function HomeScreen({ role, onOpenTrade }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [commodityCatalog, setCommodityCatalog] = useState([]);
   const [commodities, setCommodities] = useState([]);
@@ -296,6 +296,7 @@ export default function HomeScreen({ role }) {
       </div>
 
       <button
+        onClick={onOpenTrade}
         className="mx-4 mt-5 w-[calc(100%-2rem)] h-11 rounded-xl text-white font-semibold text-[14px] flex items-center justify-center gap-1.5 shadow-sm"
         style={{ backgroundColor: themeAccent }}
       >
