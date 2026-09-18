@@ -42,3 +42,5 @@ OWelcomeAuth.jsx
 __pycache__
 
 .env
+# Added by ggshield
+.cache_ggshield
